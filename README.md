@@ -7,9 +7,12 @@ survey of Lot 56.01, Block 216.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5180
+npm run dev      # http://localhost:5180 (this computer only)
 npm run build    # static site in dist/
 ```
+
+To try it on a phone on the same Wi-Fi, opt in for that run with `npm run dev -- --host`. The dev
+server is for development only; don't leave it exposed on a network.
 
 ## Layout
 
