@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
 import { buildHouse } from './buildHouse.js'
+import { buildFurniturePiece } from './furniture.js'
+import { moveFurniture } from '../model/furniture.js'
 import {
   ROOMS, ITEMS, SITE, levelById, roomById, itemById, roomFloor, roomLabelPoint, polyArea, gradeAt,
 } from '../model/house.js'
@@ -19,12 +21,17 @@ const LEVEL_FRAME = {
   L2: { cx: 22, cz: 16, r: 27 },
   B: { cx: 18, cz: 16, r: 23 },
 }
-const CATEGORY_GLYPH = { HVAC: 'H', Plumbing: 'P', Electrical: 'E', Safety: 'S', Structure: 'B', Appliances: 'A', Site: 'L', Landscape: 'T' }
+const CATEGORY_GLYPH = { HVAC: 'H', Plumbing: 'P', Electrical: 'E', Safety: 'S', Structure: 'B', Appliances: 'A', Site: 'L', Landscape: 'T', Drainage: 'D' }
 
 export class Viewer {
-  constructor(container, { onSelect } = {}) {
+  constructor(container, { onSelect, onFurnitureMove } = {}) {
     this.container = container
     this.onSelect = onSelect
+    this.onFurnitureMove = onFurnitureMove
+    this.furniture = []
+    this.furnitureGroups = new Map()
+    this.furnitureMats = new Map()
+    this.showFurniture = true
     this.mode = 'exterior'
     this.cut = true
     this.selection = null
@@ -211,6 +218,7 @@ export class Viewer {
     })
     roofGroup.visible = this.mode === 'exterior'
     this.house.woodsGroup.visible = this.mode === 'exterior'
+    this.house.utilitiesGroup.visible = this.showPins !== false
     for (const l of this.siteLabels) l.visible = this.mode === 'exterior'
     if (this.mode !== 'exterior' && this.cut) {
       clipPlanes[this.mode].constant = levelById[this.mode].floor + CUT_HEIGHT
@@ -227,19 +235,80 @@ export class Viewer {
     for (const r of this.house.roomMeshes) {
       r.highlight.visible = this.selection?.kind === 'room' && this.selection.id === r.id
     }
+    this.updateFurnitureOutline()
     this.dirty = true
   }
 
   select(selection, { fly = true } = {}) {
     this.selection = selection
     if (selection) {
-      const level = selection.kind === 'room' ? roomById[selection.id]?.level : itemById[selection.id]?.level
+      const level =
+        selection.kind === 'room' ? roomById[selection.id]?.level
+        : selection.kind === 'furniture' ? this.furnitureLevel(selection.id)
+        : itemById[selection.id]?.level
       if (level && modeOf(level) !== this.mode) {
         this.mode = modeOf(level)
       }
     }
     this.applyMode()
-    if (selection && fly) this.frameSelection()
+    // Furniture is being edited in place: keep the camera still
+    if (selection && fly && selection.kind !== 'furniture') this.frameSelection()
+  }
+
+  // ------------------------------------------------------------ furniture
+
+  furnitureLevel(id) {
+    return this.furniture.find((f) => f.id === id)?.level
+  }
+
+  furnitureMat(level, color) {
+    const key = level + color
+    if (!this.furnitureMats.has(key)) {
+      this.furnitureMats.set(
+        key,
+        new THREE.MeshStandardMaterial({ color, roughness: 0.8, side: THREE.DoubleSide, clippingPlanes: [this.house.clipPlanes[level]] }),
+      )
+    }
+    return this.furnitureMats.get(key)
+  }
+
+  setFurniture(list, show = true) {
+    this.furniture = list
+    this.showFurniture = show
+    for (const g of this.furnitureGroups.values()) {
+      g.parent?.remove(g)
+      g.traverse((o) => o.geometry?.dispose())
+    }
+    this.furnitureGroups.clear()
+    for (const f of list) {
+      const lvl = levelById[f.level]
+      if (!lvl) continue
+      const g = buildFurniturePiece(f, (color) => this.furnitureMat(f.level, color))
+      g.position.y = lvl.floor
+      g.visible = show
+      g.traverse((o) => {
+        if (o.isMesh) o.userData.furnitureId = f.id
+      })
+      this.house.levelGroups[f.level].add(g)
+      this.furnitureGroups.set(f.id, g)
+    }
+    this.updateFurnitureOutline()
+    this.dirty = true
+  }
+
+  // Orange box around the selected piece
+  updateFurnitureOutline() {
+    if (this.outline) {
+      this.outline.parent?.remove(this.outline)
+      this.outline = null
+    }
+    const s = this.selection
+    const g = s?.kind === 'furniture' && this.showFurniture ? this.furnitureGroups.get(s.id) : null
+    if (!g) return
+    g.updateMatrixWorld(true)
+    this.outline = new THREE.Box3Helper(new THREE.Box3().setFromObject(g).expandByScalar(0.08), 0xff8a1f)
+    this.scene.add(this.outline)
+    this.dirty = true
   }
 
   // ------------------------------------------------------------ camera
@@ -348,18 +417,71 @@ export class Viewer {
     const el = this.renderer.domElement
     const ray = new THREE.Raycaster()
     const ndc = new THREE.Vector2()
+    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+    const point = new THREE.Vector3()
+    const aim = (e) => {
+      const rect = el.getBoundingClientRect()
+      ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+      ray.setFromCamera(ndc, this.camera)
+    }
+    const furnitureUnder = () => {
+      if (this.mode === 'exterior' || !this.showFurniture) return null
+      const meshes = []
+      for (const [id, g] of this.furnitureGroups) {
+        if (this.furnitureLevel(id) === this.mode) g.traverse((o) => o.isMesh && meshes.push(o))
+      }
+      return ray.intersectObjects(meshes, false)[0]?.object.userData.furnitureId ?? null
+    }
     let down = null
-    el.addEventListener('pointerdown', (e) => {
-      down = { x: e.clientX, y: e.clientY }
+    let drag = null
+
+    // Capture phase, so pressing on furniture drags it instead of orbiting the camera
+    el.addEventListener(
+      'pointerdown',
+      (e) => {
+        down = { x: e.clientX, y: e.clientY }
+        aim(e)
+        const id = furnitureUnder()
+        if (!id) return
+        const g = this.furnitureGroups.get(id)
+        floorPlane.constant = -levelById[this.mode].floor
+        if (!ray.ray.intersectPlane(floorPlane, point)) return
+        drag = { id, g, dx: g.position.x - point.x, dz: g.position.z - point.z, moved: false }
+        this.controls.enabled = false
+        el.setPointerCapture(e.pointerId)
+      },
+      { capture: true },
+    )
+    el.addEventListener('pointermove', (e) => {
+      if (!drag) return
+      if (!drag.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 4) return
+      aim(e)
+      if (!ray.ray.intersectPlane(floorPlane, point)) return
+      drag.moved = true
+      // Snap to the inch; walls stop the piece (it slides along them)
+      const f = this.furniture.find((p) => p.id === drag.id)
+      const from = { ...f, x: drag.g.position.x, y: drag.g.position.z }
+      const to = moveFurniture(from, Math.round((point.x + drag.dx) * 12) / 12, Math.round((point.z + drag.dz) * 12) / 12)
+      drag.g.position.x = to.x
+      drag.g.position.z = to.y
+      this.updateFurnitureOutline()
+      this.dirty = true
     })
     el.addEventListener('pointerup', (e) => {
+      if (drag) {
+        const d = drag
+        drag = null
+        down = null
+        this.controls.enabled = true
+        if (d.moved) this.onFurnitureMove?.(d.id, d.g.position.x, d.g.position.z)
+        this.onSelect?.({ kind: 'furniture', id: d.id })
+        return
+      }
       if (!down) return
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y)
       down = null
       if (moved > 6 || this.mode === 'exterior') return
-      const rect = el.getBoundingClientRect()
-      ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      ray.setFromCamera(ndc, this.camera)
+      aim(e)
       const targets = this.house.roomMeshes.filter((r) => r.level === this.mode).map((r) => r.floor)
       const hit = ray.intersectObjects(targets, false)[0]
       this.onSelect?.(hit ? { kind: 'room', id: hit.object.userData.id } : null)

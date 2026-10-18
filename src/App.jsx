@@ -6,7 +6,8 @@ import DetailPanel from './components/DetailPanel.jsx'
 import BottomSheet from './components/BottomSheet.jsx'
 import Blueprints from './components/Blueprints.jsx'
 import { Icon } from './components/Icons.jsx'
-import { HOME, levelName, roomById, itemById } from './model/house.js'
+import { HOME, levelName, roomById, itemById, roomLabelPoint } from './model/house.js'
+import { loadFurniture, saveFurniture, settleFurniture } from './model/furniture.js'
 
 function useMediaQuery(q) {
   const [match, setMatch] = useState(() => window.matchMedia(q).matches)
@@ -19,9 +20,10 @@ function useMediaQuery(q) {
   return match
 }
 
-const levelOf = (sel) => (sel?.kind === 'room' ? roomById[sel.id]?.level : sel?.kind === 'item' ? itemById[sel.id]?.level : null)
 // Lot features ('site') are shown with the whole house.
 const modeOf = (level) => (level === 'site' ? 'exterior' : level)
+// Where a new piece of furniture lands when no room on that floor is selected
+const LEVEL_CENTER = { L1: [24, 22], L2: [30, 22], B: [24, 22] }
 
 export default function App() {
   const desktop = useMediaQuery('(min-width: 1000px)')
@@ -32,7 +34,23 @@ export default function App() {
   const [pins, setPins] = useState(true)
   const [sheet, setSheet] = useState('peek')
   const [sheetTab, setSheetTab] = useState('rooms')
+  const [furniture, setFurniture] = useState(loadFurniture)
+  const [showFurniture, setShowFurniture] = useState(true)
   const viewer = useRef(null)
+
+  useEffect(() => saveFurniture(furniture), [furniture])
+
+  const levelOf = (sel) =>
+    sel?.kind === 'room' ? roomById[sel.id]?.level
+    : sel?.kind === 'item' ? itemById[sel.id]?.level
+    : sel?.kind === 'furniture' ? furniture.find((f) => f.id === sel.id)?.level
+    : null
+
+  const updateFurniture = useCallback((id, patch) => {
+    // A typed size or rotation that would push the piece into a wall moves it clear
+    setFurniture((list) => list.map((f) => (f.id === id ? settleFurniture({ ...f, ...patch }, f) : f)))
+  }, [])
+  const moveFurniture = useCallback((id, x, y) => updateFurniture(id, { x, y }), [updateFurniture])
 
   const select = useCallback(
     (sel) => {
@@ -41,8 +59,21 @@ export default function App() {
       if (l) setLevel(modeOf(l))
       if (sel && !desktop) setSheet((s) => (s === 'full' ? 'full' : 'half'))
     },
-    [desktop],
+    [desktop, furniture],
   )
+
+  const addFurniture = (preset, lvl) => {
+    const room = selection?.kind === 'room' && roomById[selection.id]?.level === lvl ? roomById[selection.id] : null
+    const [x, y] = room ? roomLabelPoint(room) : LEVEL_CENTER[lvl]
+    const piece = settleFurniture({ id: `f${Date.now()}`, kind: preset.kind, name: preset.name, level: lvl, x, y, w: preset.w, d: preset.d, h: preset.h, rot: 0 })
+    setFurniture((list) => [...list, piece])
+    setShowFurniture(true)
+    setSelection({ kind: 'furniture', id: piece.id })
+  }
+  const removeFurniture = (id) => {
+    setFurniture((list) => list.filter((f) => f.id !== id))
+    setSelection(null)
+  }
 
   const changeLevel = (l) => {
     setLevel(l)
@@ -74,6 +105,16 @@ export default function App() {
         <Icon.pin />
         <span>Systems</span>
       </button>
+      <button
+        type="button"
+        className={'tool' + (showFurniture ? ' on' : '')}
+        onClick={() => setShowFurniture((v) => !v)}
+        title="Show furniture"
+        aria-pressed={showFurniture}
+      >
+        <Icon.sofa />
+        <span>Furniture</span>
+      </button>
     </div>
   )
 
@@ -90,11 +131,17 @@ export default function App() {
       onSelect={select}
       insetTop={insetTop}
       insetBottom={insetBottom}
+      furniture={furniture}
+      showFurniture={showFurniture}
+      onFurnitureMove={moveFurniture}
     />
   )
 
   const hint =
-    level === 'exterior' ? 'Pick a floor to look inside' : selection ? null : 'Tap a room or a pin for details'
+    level === 'exterior' ? 'Pick a floor to look inside'
+    : selection?.kind === 'furniture' ? 'Drag the piece to move it'
+    : selection ? null
+    : 'Tap a room or a pin for details'
 
   const tabs = (
     <div className="tabs" role="tablist">
@@ -129,7 +176,7 @@ export default function App() {
           <>
             <aside className="sidebar">
               <LevelPicker value={level} onChange={changeLevel} vertical />
-              <RoomList selection={selection} onSelect={select} level={level} />
+              <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} />
             </aside>
             <main className="stage">
               {viewerEl}
@@ -137,7 +184,15 @@ export default function App() {
               {hint && <div className="hint">{hint}</div>}
             </main>
             <aside className="details">
-              <DetailPanel selection={selection} onSelect={select} onClose={selection ? () => setSelection(null) : null} />
+              <DetailPanel
+                selection={selection}
+                onSelect={select}
+                onClose={selection ? () => setSelection(null) : null}
+                level={level}
+                furniture={furniture}
+                onFurnitureChange={updateFurniture}
+                onFurnitureDelete={removeFurniture}
+              />
             </aside>
           </>
         ) : (
@@ -150,7 +205,11 @@ export default function App() {
   }
 
   const sel = selection
-  const selTitle = sel ? (sel.kind === 'room' ? roomById[sel.id]?.name : itemById[sel.id]?.name) : null
+  const selTitle = sel
+    ? sel.kind === 'room' ? roomById[sel.id]?.name
+      : sel.kind === 'furniture' ? furniture.find((f) => f.id === sel.id)?.name
+      : itemById[sel.id]?.name
+    : null
   return (
     <div className={'app mobile tab-' + tab}>
       <header className="m-top">
@@ -178,7 +237,7 @@ export default function App() {
                 <div className="peek-row">
                   <div>
                     <div className="kicker">
-                      {sel.kind === 'item' ? `${itemById[sel.id]?.category} · ` : ''}
+                      {sel.kind === 'item' ? `${itemById[sel.id]?.category} · ` : sel.kind === 'furniture' ? 'Furniture · ' : ''}
                       {levelName(levelOf(sel))}
                     </div>
                     <strong>{selTitle}</strong>
@@ -204,7 +263,15 @@ export default function App() {
             }
           >
             {sel ? (
-              <DetailPanel selection={sel} onSelect={select} hideHeader />
+              <DetailPanel
+                selection={sel}
+                onSelect={select}
+                hideHeader
+                level={level}
+                furniture={furniture}
+                onFurnitureChange={updateFurniture}
+                onFurnitureDelete={removeFurniture}
+              />
             ) : (
               <>
                 <div className="seg">
@@ -212,10 +279,14 @@ export default function App() {
                     Rooms &amp; systems
                   </button>
                   <button type="button" className={sheetTab === 'home' ? 'on' : ''} onClick={() => setSheetTab('home')}>
-                    Home info
+                    {level === 'exterior' ? 'Home info' : 'Floor info'}
                   </button>
                 </div>
-                {sheetTab === 'rooms' ? <RoomList selection={sel} onSelect={select} level={level} /> : <DetailPanel selection={null} />}
+                {sheetTab === 'rooms' ? (
+                  <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} />
+                ) : (
+                  <DetailPanel selection={null} onSelect={select} level={level} furniture={furniture} />
+                )}
               </>
             )}
           </BottomSheet>

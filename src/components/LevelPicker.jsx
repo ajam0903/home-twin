@@ -1,7 +1,7 @@
 export const LEVEL_OPTIONS = [
   { id: 'exterior', label: 'Outside', long: 'Whole house' },
-  { id: 'L2', label: '2nd', long: 'Second floor' },
   { id: 'L1', label: '1st', long: 'First floor' },
+  { id: 'L2', label: '2nd', long: 'Second floor' },
   { id: 'B', label: 'Bsmt', long: 'Basement' },
 ]
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import {
-  H, LEVELS, levelById, ROOMS, WALLS, FIXTURES, DECK, SITE, PLANT_TYPES, openingPoint, roomFloor, gradeAt, deckY,
+  H, LEVELS, levelById, ROOMS, WALLS, FIXTURES, DECK, SITE, PLANT_TYPES, BAY, STAIR, openingPoint, roomFloor, gradeAt, deckY,
 } from '../model/house.js'
 
 // Plan (x, y) maps to three.js (X, Z); height is Y. 1 unit = 1 foot.
@@ -39,7 +39,7 @@ const FLOOR_COLORS = {
   closet: '#d6cfc3',
   garage: '#bdbab3',
   basement: '#aeaaa2',
-  porch: '#a98762',
+  porch: '#5d4231',
   deck: '#8d6e57',
 }
 
@@ -96,10 +96,12 @@ export function buildHouse() {
   const trimMat = plain(COLORS.trim)
 
   // ------------------------------------------------------------ walls
-  for (const wall of WALLS) addWall(levelGroups[wall.level], wall, mat)
+  const ends = wallEnds(WALLS)
+  for (const wall of WALLS) addWall(levelGroups[wall.level], wall, mat, ends.get(wall))
 
   // ------------------------------------------------------------ floors
   const roomMeshes = []
+  const floorMats = new Map()
   const highlightMat = new THREE.MeshBasicMaterial({
     color: COLORS.select, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide,
   })
@@ -111,10 +113,13 @@ export function buildHouse() {
     const floorMat =
       room.type === 'deck'
         ? new THREE.MeshStandardMaterial({ map: deckingTexture(), roughness: 0.8, side: THREE.DoubleSide, clippingPlanes: [clipPlanes[room.level]] })
-        : mat(room.level, FLOOR_COLORS[room.type] ?? '#ccc', { roughness: 0.7 })
+        : FLOOR_TEXTURES[room.flooring]
+          ? floorFinish(room.level, room.flooring, clipPlanes, floorMats)
+          : mat(room.level, FLOOR_COLORS[room.type] ?? '#ccc', { roughness: 0.7 })
     const floor = new THREE.Mesh(geo, floorMat)
     floor.position.y = y
     floor.receiveShadow = true
+    floor.castShadow = room.type === 'deck' // shade the ground under the deck
     floor.userData = { kind: 'room', id: room.id }
     levelGroups[room.level].add(floor)
 
@@ -127,11 +132,20 @@ export function buildHouse() {
   }
 
   // Thin slabs under each upper floor so the levels read as solid from the side.
-  addBox(levelGroups.L2, 0, 0, HOUSE_W, 32, H.ceil1, H.ff2 - 0.02, mat('L2', '#d9d4ca'), { holes: [[13.5, 16.5, 22.67, 32]] })
-  addBox(levelGroups.L1, 0, 0, HOUSE_W, 32, H.ff1 - 0.9, H.ff1 - 0.02, mat('L1', '#d9d4ca'), { holes: [[13.5, 16.9, 16.5, 28]] })
-  addBox(levelGroups.L1, 36.17, 3, 49, 14, H.garageFloor, H.ff1 - 0.02, mat('L1', '#d9d4ca'))
+  // Second floor: open over the stair and the two-story foyer
+  const upperHole = [
+    [STAIR.x0, STAIR.landY0], [STAIR.topX, STAIR.landY0], [STAIR.topX, STAIR.landY1],
+    [22.67, STAIR.landY1], [22.67, 31.85], [STAIR.x0, 31.85], // inside the slab edge, or the triangulation fails
+  ]
+  addBox(levelGroups.L2, 0, 0, HOUSE_W, 32, H.ceil1, H.ff2 - 0.02, mat('L2', '#d9d4ca'), { holes: [upperHole] })
+  // First floor: open over the basement stair
+  const lowerHole = [
+    [STAIR.x0, 15.6], [STAIR.topX, 15.6], [STAIR.topX, STAIR.landY1],
+    [STAIR.x1, STAIR.landY1], [STAIR.x1, 25.4], [STAIR.x0, 25.4],
+  ]
+  addBox(levelGroups.L1, 0, 0, HOUSE_W, 32, H.ff1 - 0.9, H.ff1 - 0.02, mat('L1', '#d9d4ca'), { holes: [lowerHole] })
+  addBox(levelGroups.L1, 36.17, 3, 57, 14, H.garageFloor, H.ff1 - 0.02, mat('L1', '#d9d4ca')) // raised floor under the study wing
   addBox(levelGroups.L1, 36.17, 14, 57, 36, H.garageFloor - 0.3, H.garageFloor - 0.01, mat('L1', '#b0aca4'))
-  addBox(levelGroups.L1, 49, 3, 57, 14, H.garageFloor - 0.3, H.garageFloor - 0.01, mat('L1', '#b0aca4'))
 
   // ------------------------------------------------------------ fixtures
   for (const f of FIXTURES) {
@@ -152,45 +166,18 @@ export function buildHouse() {
   }
 
   // ------------------------------------------------------------ stairs
-  // Main stair: bottom tread at the front (y 28), climbing to the upper hall at y 16.5.
-  addStair(levelGroups.L1, { x0: 13.55, x1: 16.45, yLow: 28, yHigh: 16.5, zLow: H.ff1, zHigh: H.ff2, risers: 15 }, mat('L1', COLORS.stair, { roughness: 0.6 }))
-  // Basement stair below it, top at the rear.
-  addStair(levelGroups.B, { x0: 13.55, x1: 16.45, yLow: 28, yHigh: 16.9, zLow: H.basementFloor, zHigh: H.ff1, risers: 13 }, mat('B', '#a88a66'))
-  // Garage steps from the mudroom door.
-  addStair(levelGroups.L1, { x0: 49.25, x1: 51.6, yLow: 10.4, yHigh: 13.6, zLow: H.garageFloor, zHigh: H.ff1, risers: 3, alongX: true, xLow: 51.6, xHigh: 49.25 }, mat('L1', COLORS.step))
+  buildMainStairs(levelGroups, mat)
+  // Steps from the back hall door down into the garage
+  addStair(levelGroups.L1, { x0: 36.6, x1: 39.6, yLow: 16.6, yHigh: 14.17, zLow: H.garageFloor, zHigh: H.ff1, risers: 3 }, mat('L1', COLORS.step))
 
   // ------------------------------------------------------------ porch & stoops
   const L1 = levelGroups.L1
-  addBox(L1, 0, 32, 35.83, 36, H.grade, H.porchFloor, mat('L1', '#8f8a80'))
-  addBox(L1, 0, 32, 35.83, 36, H.porchFloor - 0.02, H.porchFloor + 0.05, mat('L1', COLORS.porchDeck, { roughness: 0.7 }))
-  addStair(L1, { x0: 15, x1: 21.2, yLow: 38.6, yHigh: 36, zLow: H.grade, zHigh: H.porchFloor, risers: 3 }, mat('L1', COLORS.step))
+  buildPorch(L1, roofGroup, mat, plain)
   // Bay underside skirt
   addBox(L1, 18.3, -1.62, 24.3, 0, H.ff1 - 0.7, H.ff1 - 0.02, mat('L1', COLORS.siding))
 
   // ------------------------------------------------------------ deck (2020)
   buildDeck(L1, mat)
-
-  const postXs = [0.25, 7, 14.4, 21.6, 28.6, 35.6]
-  const balusters = []
-  const railMat = plain(COLORS.rail)
-  for (const x of postXs) addBox(roofGroup, x - 0.17, 35.55, x + 0.17, 35.89, H.porchFloor, 10.4, railMat, { shadow: true })
-  for (let i = 0; i < postXs.length - 1; i++) {
-    const a = postXs[i] + 0.17
-    const b = postXs[i + 1] - 0.17
-    if (i === 2) continue // entry steps
-    addBox(roofGroup, a, 35.66, b, 35.8, H.porchFloor + 2.9, H.porchFloor + 3.1, railMat)
-    addBox(roofGroup, a, 35.66, b, 35.8, H.porchFloor + 0.25, H.porchFloor + 0.4, railMat)
-    for (let x = a + 0.35; x < b - 0.1; x += 0.42) balusters.push([x, 35.73])
-  }
-  // Left end railing
-  addBox(roofGroup, 0.15, 32.2, 0.35, 35.55, H.porchFloor + 2.9, H.porchFloor + 3.1, railMat)
-  for (let y = 32.5; y < 35.4; y += 0.42) balusters.push([0.25, y])
-  const balGeo = new THREE.BoxGeometry(0.12, 2.5, 0.12)
-  const balMesh = new THREE.InstancedMesh(balGeo, railMat, balusters.length)
-  balusters.forEach(([x, y], i) => {
-    balMesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(x, H.porchFloor + 1.65, y))
-  })
-  roofGroup.add(balMesh)
 
   // ------------------------------------------------------------ roofs
   // Main roof: side gable, ridge along x, 9/12.
@@ -199,7 +186,7 @@ export function buildHouse() {
   gableEnd(roofGroup, { plane: 'x', at: 36.17, from: 0, to: 32, base: H.ceil2, pitch: 0.75 }, sidingMat)
   // Decorative front gable over the center window
   gableRoof(roofGroup, { x0: 13.6, x1: 22.6, z0: 24.5, z1: 32, axis: 'z', base: H.ceil2, pitch: 1, eave: 0.6, rake: 0.6, noBackRake: true }, roofMat, roofEdgeMat)
-  gableEnd(roofGroup, { plane: 'z', at: 32, from: 13.6, to: 22.6, base: H.ceil2, pitch: 1 }, plain('#e4dfd3'))
+  gableEnd(roofGroup, { plane: 'z', at: 32, from: 13.6, to: 22.6, base: H.ceil2, pitch: 1 }, plain('#f3f1ec')) // white scallop shingles
   const fan = new THREE.Mesh(new THREE.CircleGeometry(1.4, 24, 0, Math.PI), trimMat)
   fan.position.set(18.1, H.ceil2 + 0.6, 32.3)
   roofGroup.add(fan)
@@ -208,8 +195,8 @@ export function buildHouse() {
   shedRoof(roofGroup, { x0: -0.4, x1: 36.1, zWall: 32, zEave: 36.6, yWall: 13.5, yEave: 10.35 }, roofMat)
   addBox(roofGroup, -0.1, 35.5, 35.95, 36.0, 9.9, 10.5, trimMat)
 
-  // Bay roof
-  shedRoof(roofGroup, { x0: 16.4, x1: 26.2, zWall: 0, zEave: -2.2, yWall: H.ff1 + 8.8, yEave: H.ff1 + 7.85 }, roofMat)
+  // Bay roof: hipped, with white fascia and soffit (as in the photo)
+  bayRoof(roofGroup, roofMat, roofEdgeMat, trimMat)
 
   // Garage: side gable (ridge along x) plus a full-width front gable, 11/12.
   gableRoof(roofGroup, { x0: 36.17, x1: 57, z0: 3, z1: 36, axis: 'x', base: H.garagePlate, pitch: 0.75, eave: 1, rake: 0.8, noStartRake: true }, roofMat, roofEdgeMat)
@@ -237,10 +224,15 @@ export function buildHouse() {
   woodsGroup.name = 'woods'
   root.add(woodsGroup)
   buildSite(siteGroup, woodsGroup, plain)
+  // Buried drain lines, shown with the Systems toggle; downspouts on the house
+  const utilitiesGroup = new THREE.Group()
+  utilitiesGroup.name = 'utilities'
+  root.add(utilitiesGroup)
+  buildDrainage(utilitiesGroup, roofGroup, plain)
   // Excavation walls visible in the basement cutaway
   addBox(siteGroup, -0.55, -0.55, 36.72, -0.5, H.basementFloor, -0.12, plain('#7a6a58'))
 
-  return { root, levelGroups, roofGroup, siteGroup, woodsGroup, roomMeshes, clipPlanes }
+  return { root, levelGroups, roofGroup, siteGroup, woodsGroup, utilitiesGroup, roomMeshes, clipPlanes }
 }
 
 // ------------------------------------------------------------ property
@@ -349,7 +341,68 @@ function buildSite(group, woods, plain) {
   addBox(group, face, sv.y - 0.05, face + 0.07, sv.y + 0.05, 0.3, sv.meterZ - 0.65, wireMat)
 
   buildPlantings(group, plain)
+  buildFrontBeds(group, plain)
+  // Big trees go with the woods: hidden in the floor cutaways so they don't cover rooms
+  buildMaples(woods, plain)
   buildWoods(woods)
+}
+
+// Mulched beds along the porch with a row of low, rounded shrubs
+function buildFrontBeds(group, plain) {
+  const mulch = plain('#4a3426', { roughness: 1 })
+  const shrub = plain('#3f6b35')
+  for (const b of SITE.beds) {
+    addBox(group, b.x0, b.y0, b.x1, b.y1, -0.02, 0.07, mulch, { receive: true })
+    const n = Math.max(1, Math.round((b.x1 - b.x0) / 3.2))
+    for (let i = 0; i < n; i++) {
+      const x = b.x0 + ((b.x1 - b.x0) * (i + 0.5)) / n
+      const r = 0.85 + ((i * 7) % 3) * 0.12
+      const s = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), shrub)
+      s.position.set(x, r * 0.7, (b.y0 + b.y1) / 2 + 0.2)
+      s.scale.set(1, 0.85, 1)
+      s.castShadow = s.receiveShadow = true
+      group.add(s)
+    }
+  }
+}
+
+// Japanese maples: a few trunks leaning out from one base under a broad,
+// layered canopy, green with autumn orange at the edges (photo)
+function buildMaples(group, plain) {
+  const bark = plain('#4b3d33')
+  const leaves = [plain('#5f7f3c'), plain('#6e8a43'), plain('#a8703a'), plain('#8b5a33')]
+  const t = PLANT_TYPES.maple
+  for (const p of SITE.plants.filter((pl) => pl.kind === 'maple')) {
+    const [x, y] = p.at
+    const g = gradeAt(y)
+    const base = new THREE.Vector3(x, g, y)
+    for (const [dx, dy] of [[1.8, 0.6], [-1.6, 1.0], [0.4, -1.8], [-0.6, -0.4]]) {
+      const top = new THREE.Vector3(x + dx * 2.2, g + t.height * 0.45, y + dy * 2.2)
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.32, base.distanceTo(top), 7), bark)
+      trunk.position.copy(base).add(top).multiplyScalar(0.5)
+      trunk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(base).normalize())
+      trunk.castShadow = true
+      group.add(trunk)
+    }
+    // Airy, layered canopy: many small flattened clumps in a broad dome,
+    // wider low and narrower high
+    let seed = Math.round(x * 31 + y * 17) + 5
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647
+      return seed / 2147483647
+    }
+    for (let i = 0; i < 30; i++) {
+      const h = 0.45 + rnd() * 0.5 // height fraction
+      const reach = (t.spread / 2) * (1.05 - (h - 0.45) * 1.2) * Math.sqrt(rnd())
+      const a = rnd() * Math.PI * 2
+      const r = 1.8 + rnd() * 1.6
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves[rnd() < 0.72 ? Math.floor(rnd() * 2) : 2 + Math.floor(rnd() * 2)])
+      blob.position.set(x + Math.cos(a) * reach, g + h * t.height, y + Math.sin(a) * reach)
+      blob.scale.set(1, 0.6, 1)
+      blob.castShadow = blob.receiveShadow = true
+      group.add(blob)
+    }
+  }
 }
 
 // Unit-size lathe profile [radius, height] turned into a solid of revolution.
@@ -415,6 +468,20 @@ function buildPlantings(group, plain) {
       group.add(canopy)
     }
   }
+}
+
+// Downspouts at the corners, and the buried pipes marked on the ground the way
+// a utility locate would: red for the solid downspout lines, a stone trench with
+// a blue dashed line for the French drain.
+function buildDrainage(group, roofGroup, plain) {
+  const d = SITE.drainage
+  const white = plain('#f4f4f0', { roughness: 0.5 })
+  for (const [x, y, top] of d.downspouts) {
+    addBox(roofGroup, x - 0.13, y - 0.13, x + 0.13, y + 0.13, gradeAt(y) + 0.3, top, white, { shadow: true })
+  }
+  groundRibbon(group, d.solid, { width: 0.32, color: '#d0473a', lift: 0.15 })
+  groundRibbon(group, [d.french], { width: 1.3, color: '#a39e94', lift: 0.13 })
+  groundRibbon(group, [d.french], { width: 0.28, color: '#2f6fde', dash: [2, 1], lift: 0.16 })
 }
 
 // Flat strip lying on the (sloped) ground, optionally dashed [on, off] in feet.
@@ -665,12 +732,16 @@ function buildWoods(group) {
 
 // ------------------------------------------------------------ deck
 
+// Matched to a photo of the deck (Oct 2026)
 const DECK_COLORS = {
-  board: '#8d6e57',
-  frame: '#6f5442',
-  framing: '#a8916b',
+  board: '#4f3728', // decking and stair treads, dark brown
+  border: '#45301f', // picture-frame boards
+  frame: '#8a5a3a', // fascia and skirt frame boards, reddish brown
+  framing: '#a8916b', // pressure-treated lumber underneath
   rail: '#f7f6f2',
+  cap: '#6a4835', // brown cap on the white rails
   baluster: '#1f2226',
+  lattice: '#7a6a5d',
   concrete: '#b5b1a8',
   light: '#ffe2a3',
 }
@@ -705,6 +776,8 @@ function buildDeck(group, mat) {
     [[x0, deckY(DECK.depth)], [x1, deckY(DECK.depth)]],
     [[x1, deckY(DECK.depth)], [x1, deckY(landing.depth)]],
     [[landing.x1, deckY(0)], [landing.x1, deckY(landing.depth)]],
+    // top of the stair: closes the open riser under the landing's edge
+    [[x1, deckY(landing.depth)], [landing.x1, deckY(landing.depth)]],
   ]
   for (const [[ax, ay], [bx, by]] of edges) {
     const vertical = ax === bx
@@ -714,27 +787,81 @@ function buildDeck(group, mat) {
     // 5.5" border board laid on top along the edge, inside the deck
     const ix = vertical ? (ax === x0 ? 0.46 : -0.46) : 0
     const iy = vertical ? 0 : 0.46
-    addBox(group, Math.min(ax, ax + ix, bx), Math.min(ay, ay + iy, by), Math.max(ax, ax + ix, bx), Math.max(ay, ay + iy, by), top - 0.01, top + 0.012, m(DECK_COLORS.frame, { roughness: 0.75 }))
+    addBox(group, Math.min(ax, ax + ix, bx), Math.min(ay, ay + iy, by), Math.max(ax, ax + ix, bx), Math.max(ay, ay + iy, by), top - 0.01, top + 0.012, m(DECK_COLORS.border, { roughness: 0.75 }))
   }
 
-  // Lattice skirt from grade up to the fascia, with a gate on the far side
+  // Shaded, bare ground under the deck and landing only (seen through the lattice)
+  for (const [ax, bx, depth] of [[x0, x1, DECK.depth], [x1, landing.x1, landing.depth]]) {
+    const pts = [[ax, deckY(0)], [bx, deckY(0)], [bx, deckY(depth)], [ax, deckY(depth)]]
+    const pos = pts.flatMap(([x, y]) => [x, gradeAt(y) + 0.03, y])
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    geo.setIndex([0, 1, 2, 0, 2, 3])
+    geo.computeVertexNormals()
+    group.add(new THREE.Mesh(geo, m('#3a332c', { roughness: 1 })))
+  }
+
+  // Lattice skirt set in brown frame panels: a bottom rail on the grade and
+  // frame boards between panels. Faces run from `a` to `b`; `cuts` are frame
+  // boards measured along the face; `out` is the outward side.
   const lattice = latticeMaterial(mat)
-  skirt(group, x0, deckY(0), x0, deckY(DECK.depth), top - 0.78, lattice)
-  skirt(group, x0, deckY(DECK.depth), x1, deckY(DECK.depth), top - 0.78, lattice)
-  skirt(group, x1, deckY(DECK.depth), x1, deckY(landing.depth), top - 0.78, lattice)
-  skirt(group, landing.x1, deckY(0), landing.x1, deckY(landing.depth), top - 0.78, lattice)
-  const gate = m('#e9e6df')
-  const g0 = deckY(1)
-  const g1 = deckY(3.6)
-  for (const y of [g0, g1]) addBox(group, x0 - 0.12, y + 0.1, x0, y - 0.1, gradeAt(y), top - 0.78, gate)
-  addBox(group, x0 - 0.12, g0, x0, g1, top - 1.0, top - 0.78, gate)
+  const frameMat = m(DECK_COLORS.frame, { roughness: 0.7 })
+  const skirtTop = top - 0.78
+  const door = DECK.skirtDoor
+  const faces = [
+    { a: [x0, deckY(0)], b: [x0, deckY(DECK.depth)], out: [-1, 0], cuts: [4.5, 9, 13.5] },
+    { a: [x0, deckY(DECK.depth)], b: [x1, deckY(DECK.depth)], out: [0, -1], cuts: [4, 8, 12, 16] },
+    // stair side: the lattice door, then the panel down to the bottom of the stair, then behind the stair
+    {
+      a: [x1, deckY(DECK.depth)], b: [x1, deckY(landing.depth)], out: [1, 0],
+      cuts: [DECK.depth - door.d1, DECK.depth - door.d0, DECK.depth - stair.from - stair.run],
+    },
+    { a: [landing.x1, deckY(0)], b: [landing.x1, deckY(landing.depth)], out: [1, 0], cuts: [] },
+  ]
+  // A board `width` wide along the face, 0.1' thick on the outward side
+  const frameBoard = (x, y, out, along, z0, z1, width = 0.45) => {
+    const hw = width / 2
+    if (Math.abs(along[0]) < 0.5) {
+      const [xa, xb] = [x + out[0] * 0.02, x + out[0] * 0.12]
+      addBox(group, Math.min(xa, xb), y - hw, Math.max(xa, xb), y + hw, z0, z1, frameMat)
+    } else {
+      const [ya, yb] = [y + out[1] * 0.02, y + out[1] * 0.12]
+      addBox(group, x - hw, Math.min(ya, yb), x + hw, Math.max(ya, yb), z0, z1, frameMat)
+    }
+  }
+  for (const f of faces) {
+    const [ax, ay] = f.a
+    const [bx, by] = f.b
+    const len = Math.hypot(bx - ax, by - ay)
+    const along = [(bx - ax) / len, (by - ay) / len]
+    const at = (s) => [ax + along[0] * s, ay + along[1] * s]
+    skirt(group, ax, ay, bx, by, skirtTop, lattice)
+    // bottom rail on the grade, just outside the lattice
+    const off = (p) => [p[0] + f.out[0] * 0.07, p[1] + f.out[1] * 0.07]
+    verticalRibbon(group, [off(f.a), off(f.b)], 0.45, frameMat)
+    for (const s of [0, ...f.cuts, len]) {
+      const [x, y] = at(s)
+      frameBoard(x, y, f.out, along, gradeAt(y) - 0.05, skirtTop)
+    }
+  }
+  // Lattice door: stiles and rails inside its opening, hinges on the corner side
+  {
+    const s0 = DECK.depth - door.d1
+    const s1 = DECK.depth - door.d0
+    const x = x1 + 0.12
+    const black = m('#1d1f22', { roughness: 0.5 })
+    const g = gradeAt(deckY(door.d1))
+    for (const s of [s0 + 0.4, s1 - 0.4]) frameBoard(x, deckY(DECK.depth - s), [1, 0], [0, 1], g + 0.45, skirtTop - 0.05, 0.3)
+    for (const z of [g + 0.45, skirtTop - 0.3]) addBox(group, x, deckY(door.d1 - 0.25), x + 0.1, deckY(door.d0 + 0.25), z, z + 0.3, frameMat)
+    for (const z of [g + 0.9, skirtTop - 0.55]) addBox(group, x + 0.1, deckY(door.d1 - 0.2), x + 0.14, deckY(door.d1 - 0.75), z - 0.06, z + 0.06, black)
+    addBox(group, x + 0.1, deckY(door.d0 + 0.35), x + 0.16, deckY(door.d0 + 0.6), g + 1.8, g + 2.05, black)
+  }
 
   // Stair: 7 treads down to a concrete pad, away from the house
   const sy0 = deckY(stair.from)
   const sy1 = deckY(stair.from + stair.run)
-  const padY1 = deckY(stair.from + stair.run + DECK.pad.depth)
-  const padTop = gradeAt((sy1 + padY1) / 2) + 0.1
-  addBox(group, stair.x0, sy1, stair.x1, padY1, gradeAt(padY1) - 0.25, padTop, m(DECK_COLORS.concrete), { receive: true })
+  // The bottom step lands on the lawn (no concrete pad, owner)
+  const padTop = gradeAt(sy1)
   const rise = (top - padTop) / (stair.treads + 1)
   addStair(group, { x0: stair.x0 + 0.06, x1: stair.x1 - 0.1, yLow: sy1, yHigh: sy0, zLow: padTop, zHigh: top - rise, risers: stair.treads }, m(DECK_COLORS.board, { roughness: 0.8 }))
   const run = (sy0 - sy1) / stair.treads
@@ -751,9 +878,33 @@ function buildDeck(group, mat) {
     return top - rise + (padTop + rise - (top - rise)) * t
   }
 
+  // Outer side of the stair: a brown stringer board along the slope with a
+  // triangle of lattice under it and a bottom rail on the grade
+  {
+    const x = stair.x1 + 0.06
+    const zTop = stairBase(stair.from) - 0.15
+    const zBot = stairBase(stair.from + stair.run) - 0.15
+    beam(group, new THREE.Vector3(x + 0.02, zTop - 0.45, sy0), new THREE.Vector3(x + 0.02, zBot - 0.45, sy1), 0.12, 0.9, frameMat)
+    const gTop = gradeAt(sy0) - 0.05
+    const gBot = gradeAt(sy1) - 0.05
+    const hTop = zTop - 0.9
+    const hBot = Math.max(gBot, zBot - 0.9)
+    const len = sy0 - sy1
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([x, gTop, sy0, x, hTop, sy0, x, hBot, sy1, x, gBot, sy1], 3))
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, gTop, 0, hTop, len, hBot, len, gBot], 2))
+    geo.setIndex([0, 1, 2, 0, 2, 3])
+    geo.computeVertexNormals()
+    const tri = new THREE.Mesh(geo, lattice)
+    tri.castShadow = tri.receiveShadow = true
+    group.add(tri)
+    verticalRibbon(group, [[x + 0.07, sy0], [x + 0.07, sy1]], 0.45, frameMat)
+  }
+
   // Vinyl railing with black aluminum balusters
   const railMat = m(DECK_COLORS.rail, { roughness: 0.5 })
   const balMat = m(DECK_COLORS.baluster, { roughness: 0.4 })
+  const capMat = m(DECK_COLORS.cap, { roughness: 0.6 })
   const balusters = []
   for (const rail of DECK.rails) {
     const pts = rail.posts.map(([x, d, light]) => ({
@@ -775,6 +926,7 @@ function buildDeck(group, mat) {
       const k1 = 1 - k0
       const at = (k, h) => new THREE.Vector3(a.x + (b.x - a.x) * k, a.base + (b.base - a.base) * k + h, a.y + (b.y - a.y) * k)
       beam(group, at(k0, 2.9), at(k1, 2.9), 0.3, 0.2, railMat)
+      beam(group, at(k0, 3.02), at(k1, 3.02), 0.34, 0.05, capMat)
       beam(group, at(k0, 0.32), at(k1, 0.32), 0.2, 0.14, railMat)
       const n = Math.floor((len - 0.4) / 0.375)
       for (let j = 1; j < n; j++) balusters.push(at(k0 + ((k1 - k0) * j) / n, 1.6))
@@ -784,15 +936,6 @@ function buildDeck(group, mat) {
   balusters.forEach((p, i) => balMesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)))
   balMesh.castShadow = true
   group.add(balMesh)
-
-  // Graspable handrail on the deck side of the stair
-  const hx = stair.x0 + 0.3
-  const hTop = new THREE.Vector3(hx, stairBase(stair.from) + 2.9, sy0 - 0.2)
-  const hBot = new THREE.Vector3(hx, stairBase(stair.from + stair.run) + 2.9, sy1)
-  const hr = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, hTop.distanceTo(hBot), 12), railMat)
-  hr.position.copy(hTop).add(hBot).multiplyScalar(0.5)
-  hr.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), hBot.clone().sub(hTop).normalize())
-  group.add(hr)
 }
 
 // Box from p to q (3D) with a w x h cross-section, kept upright.
@@ -815,7 +958,93 @@ function skirt(group, ax, ay, bx, by, topY, material) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, ga, len, gb, len, topY, 0, topY], 2))
   geo.setIndex([0, 1, 2, 0, 2, 3])
   geo.computeVertexNormals()
-  group.add(new THREE.Mesh(geo, material))
+  const mesh = new THREE.Mesh(geo, material)
+  mesh.castShadow = mesh.receiveShadow = true // the space under the deck reads dark through the lattice
+  group.add(mesh)
+}
+
+// ------------------------------------------------------------ floor finishes
+// Canvas textures; floor UVs are plan feet, so `feet` is the area one tile covers.
+
+function canvasTexture(w, h, feet, draw) {
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  draw(c.getContext('2d'), w, h)
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(1 / feet[0], 1 / feet[1])
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  return tex
+}
+
+let seedState = 7
+const rand = () => {
+  seedState = (seedState * 16807) % 2147483647
+  return seedState / 2147483647
+}
+
+const FLOOR_TEXTURES = {
+  // Natural oak strips, 2 1/4" wide, staggered butt joints (4' x 1.875' tile)
+  hardwood: () =>
+    canvasTexture(512, 240, [4, 1.875], (g, w, h) => {
+      const strip = 24
+      for (let row = 0; row < h / strip; row++) {
+        let x = -Math.floor(rand() * 200)
+        while (x < w) {
+          const len = 120 + rand() * 260
+          const tone = 140 + rand() * 40
+          g.fillStyle = `rgb(${tone + 50}, ${tone + 8}, ${tone - 50})`
+          g.fillRect(x, row * strip, len, strip)
+          g.fillStyle = 'rgba(90, 55, 25, 0.1)'
+          for (let k = 0; k < 3; k++) g.fillRect(x, row * strip + 3 + rand() * (strip - 6), len, 1)
+          g.fillStyle = 'rgba(60, 35, 15, 0.45)'
+          g.fillRect(x, row * strip, 2, strip)
+          x += len
+        }
+        g.fillStyle = 'rgba(60, 35, 15, 0.35)'
+        g.fillRect(0, row * strip + strip - 1, w, 1)
+      }
+    }),
+  // Light neutral carpet with a fine speckle (2' tile)
+  carpet: () =>
+    canvasTexture(128, 128, [2, 2], (g, w, h) => {
+      g.fillStyle = '#b9ad9d'
+      g.fillRect(0, 0, w, h)
+      for (let k = 0; k < 2200; k++) {
+        const v = rand() < 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(60,45,30,0.10)'
+        g.fillStyle = v
+        g.fillRect(rand() * w, rand() * h, 1.5, 1.5)
+      }
+    }),
+  // 12" white ceramic tile with gray grout (1' tile)
+  tile: () =>
+    canvasTexture(128, 128, [1, 1], (g, w, h) => {
+      g.fillStyle = '#b8b3aa'
+      g.fillRect(0, 0, w, h)
+      g.fillStyle = '#eeece7'
+      g.fillRect(2, 2, w - 4, h - 4)
+    }),
+}
+
+// Textures are shared; materials belong to one build because they hold its clip planes.
+const floorTextures = new Map()
+function floorFinish(level, flooring, clipPlanes, cache) {
+  const key = level + flooring
+  if (!cache.has(key)) {
+    if (!floorTextures.has(flooring)) floorTextures.set(flooring, FLOOR_TEXTURES[flooring]())
+    cache.set(
+      key,
+      new THREE.MeshStandardMaterial({
+        map: floorTextures.get(flooring),
+        roughness: flooring === 'carpet' ? 1 : flooring === 'tile' ? 0.45 : 0.6,
+        side: THREE.DoubleSide,
+        clippingPlanes: [clipPlanes[level]],
+      }),
+    )
+  }
+  return cache.get(key)
 }
 
 let deckingTex = null
@@ -828,16 +1057,16 @@ function deckingTexture() {
   const g = c.getContext('2d')
   const pitch = 128
   const board = Math.round(pitch * (5.5 / 5.75))
-  const tones = ['#93735b', '#8a6b54']
+  const tones = ['#563c2c', '#4e3627']
   for (let i = 0; i < 2; i++) {
     const y0 = i * pitch
     g.fillStyle = tones[i]
     g.fillRect(0, y0, c.width, board)
     for (let k = 0; k < 40; k++) {
-      g.fillStyle = k % 2 ? 'rgba(60,40,28,0.08)' : 'rgba(170,140,110,0.08)'
+      g.fillStyle = k % 2 ? 'rgba(30,18,10,0.1)' : 'rgba(150,110,80,0.08)'
       g.fillRect(0, y0 + Math.random() * board, c.width, 1 + Math.random() * 2)
     }
-    g.fillStyle = '#3d2f25'
+    g.fillStyle = '#24180f'
     g.fillRect(0, y0 + board, c.width, pitch - board)
   }
   // one butt joint per board, staggered
@@ -852,12 +1081,12 @@ function deckingTexture() {
   return tex
 }
 
-function latticeMaterial(mat) {
+function latticeMaterial(mat, color = DECK_COLORS.lattice) {
   const c = document.createElement('canvas')
   c.width = c.height = 128
   const g = c.getContext('2d')
-  g.strokeStyle = '#f1efe9'
-  g.lineWidth = 16
+  g.strokeStyle = color
+  g.lineWidth = 14
   for (let i = -128; i <= 256; i += 64) {
     g.beginPath()
     g.moveTo(i, 0)
@@ -887,8 +1116,10 @@ function addBox(group, x0, y0, x1, y1, z0, z1, material, opts = {}) {
   if (opts.holes) {
     // Slab with rectangular holes: build as a shape extrusion.
     const shape = new THREE.Shape([new THREE.Vector2(x0, y0), new THREE.Vector2(x1, y0), new THREE.Vector2(x1, y1), new THREE.Vector2(x0, y1)])
-    for (const [hx0, hy0, hx1, hy1] of opts.holes) {
-      shape.holes.push(new THREE.Path([new THREE.Vector2(hx0, hy0), new THREE.Vector2(hx0, hy1), new THREE.Vector2(hx1, hy1), new THREE.Vector2(hx1, hy0)]))
+    // A hole is a rectangle [x0, y0, x1, y1] or a polygon [[x, y], ...]
+    for (const hole of opts.holes) {
+      const pts = Array.isArray(hole[0]) ? hole : [[hole[0], hole[1]], [hole[0], hole[3]], [hole[2], hole[3]], [hole[2], hole[1]]]
+      shape.holes.push(new THREE.Path(pts.map(([x, y]) => new THREE.Vector2(x, y))))
     }
     const geo = new THREE.ExtrudeGeometry(shape, { depth: z1 - z0, bevelEnabled: false })
     geo.rotateX(Math.PI / 2) // extrusion +z -> -y
@@ -906,7 +1137,54 @@ function addBox(group, x0, y0, x1, y1, z0, z1, material, opts = {}) {
   return mesh
 }
 
-function addWall(group, wall, mat) {
+// How far each wall runs past its end points, [start, end] (negative: it
+// stops short). Exterior walls run half their thickness past both ends, as
+// they always have. Elsewhere no two walls overlap, so a cutaway never shows
+// doubled faces: at an L corner the thicker (else the earlier) wall runs to the
+// outer face and the other stops at its face; at a T the stem stops at the
+// face of the wall it meets; walls in line just meet.
+function wallEnds(walls) {
+  const info = walls
+    .filter((w) => w.kind !== 'rail')
+    .map((w, i) => {
+      const [ax, ay] = w.a
+      const [bx, by] = w.b
+      const L = Math.hypot(bx - ax, by - ay)
+      return { w, i, ax, ay, ux: (bx - ax) / L, uy: (by - ay) / L, L }
+    })
+  const ends = new Map()
+  for (const A of info) {
+    if (A.w.ext) {
+      ends.set(A.w, [A.w.t / 2, A.w.t / 2])
+      continue
+    }
+    const adj = [0, 0]
+    ;[A.w.a, A.w.b].forEach(([px, py], k) => {
+      let trim = 0
+      let extend = false
+      let inLine = false
+      for (const B of info) {
+        if (B === A || B.w.level !== A.w.level) continue
+        const along = (px - B.ax) * B.ux + (py - B.ay) * B.uy
+        const off = Math.abs((py - B.ay) * B.ux - (px - B.ax) * B.uy)
+        if (off > 0.05 || along < -0.05 || along > B.L + 0.05) continue
+        if (Math.abs(A.ux * B.uy - A.uy * B.ux) < 0.1) {
+          inLine = true
+          continue
+        }
+        const atEnd = along < 0.05 || along > B.L - 0.05
+        const aFirst = A.w.t > B.w.t || (A.w.t === B.w.t && A.i < B.i)
+        if (atEnd && aFirst && !B.w.ext) extend = true
+        else trim = Math.max(trim, B.w.t / 2)
+      }
+      adj[k] = trim ? -trim : extend && !inLine ? A.w.t / 2 : 0
+    })
+    ends.set(A.w, adj)
+  }
+  return ends
+}
+
+function addWall(group, wall, mat, [e0, e1] = [0, 0]) {
   const lvl = levelById[wall.level]
   const base = wall.base ?? lvl.floor
   const h = wall.h ?? (wall.kind === 'foundation' ? 8.4 : lvl.height)
@@ -917,7 +1195,6 @@ function addWall(group, wall, mat) {
   const uy = (by - ay) / L
   const ang = Math.atan2(uy, ux)
   const t = wall.t
-  const ext = wall.ext ? t / 2 : 0
   const isFoundation = wall.kind === 'foundation'
   const wallMat = mat(wall.level, isFoundation ? '#a8a49c' : wall.ext ? '#ece8df' : '#f6f4ef')
 
@@ -935,13 +1212,20 @@ function addWall(group, wall, mat) {
   }
 
   if (wall.kind === 'rail') {
-    piece(0, L, h - 0.15, h, mat(wall.level, '#fbfaf7'), 0.3)
-    piece(0, L, 0.05, h - 0.15, mat(wall.level, '#ffffff', { opacity: 0.25, roughness: 0.2 }), 0.06)
+    // Stained handrail over white balusters at 4" max opening, on a shoe
+    const balMat = mat(wall.level, RAIL_COLORS.baluster)
+    piece(0, L, h - 0.15, h, mat(wall.level, RAIL_COLORS.handrail, { roughness: 0.5 }), 0.22)
+    piece(0, L, 0, 0.12, balMat, 0.22)
+    const n = Math.max(1, Math.round(L / BALUSTER_STEP))
+    for (let i = 1; i < n; i++) {
+      const sm = (L * i) / n
+      piece(sm - 0.04, sm + 0.04, 0.12, h - 0.15, balMat, 0.08)
+    }
     return
   }
   if (wall.kind === 'knee') {
-    piece(-ext, L + ext, 0, h, wallMat)
-    piece(-ext, L + ext, h, h + 0.1, mat(wall.level, '#fbfaf7'), t + 0.12)
+    piece(-e0, L + e1, 0, h, wallMat)
+    piece(-e0, L + e1, h, h + 0.1, mat(wall.level, '#fbfaf7'), t + 0.12)
     return
   }
 
@@ -952,7 +1236,7 @@ function addWall(group, wall, mat) {
     })
     .sort((a, b) => a.s0 - b.s0)
 
-  let s = -ext
+  let s = -e0
   for (const op of ops) {
     piece(s, op.s0, 0, h, wallMat)
     piece(op.s0, op.s1, 0, op.sill, wallMat)
@@ -962,27 +1246,145 @@ function addWall(group, wall, mat) {
     if (op.type === 'window') {
       piece(op.s0, op.s1, op.sill, op.head, mat(wall.level, '#9fc3dd', { opacity: 0.45, roughness: 0.1 }), 0.06)
       const trim = mat(wall.level, '#ffffff')
+      if (op.shutters) {
+        // Black louvered shutters on the outside face, one each side of the window
+        const sh = mat(wall.level, '#1e2226', { roughness: 0.6 })
+        const out = t / 2 + 0.05
+        for (const [a, b] of [[op.s0 - 1.5, op.s0 - 0.15], [op.s1 + 0.15, op.s1 + 1.5]]) {
+          piece(a, b, op.sill, op.head, sh, 0.08, out)
+          for (let z = op.sill + 0.35; z < op.head - 0.2; z += 0.3) piece(a + 0.1, b - 0.1, z - 0.03, z + 0.03, sh, 0.05, out + 0.06)
+        }
+      }
       piece(op.s0 - 0.12, op.s1 + 0.12, op.sill - 0.12, op.sill, trim, t + 0.14)
       piece(op.s0 - 0.12, op.s1 + 0.12, op.head, op.head + 0.15, trim, t + 0.1)
-      piece(op.s0, op.s1, (op.sill + op.head) / 2 - 0.05, (op.sill + op.head) / 2 + 0.05, trim, 0.12)
-      if (op.model !== 'C235' && op.w > 4) piece((op.s0 + op.s1) / 2 - 0.12, (op.s0 + op.s1) / 2 + 0.12, op.sill, op.head, trim, t + 0.02)
+      // Casements have side-by-side sashes; double-hungs a meeting rail (and a mullion when paired)
+      if (op.model === 'C235') {
+        piece((op.s0 + op.s1) / 2 - 0.08, (op.s0 + op.s1) / 2 + 0.08, op.sill, op.head, trim, t + 0.02)
+      } else {
+        piece(op.s0, op.s1, (op.sill + op.head) / 2 - 0.05, (op.sill + op.head) / 2 + 0.05, trim, 0.12)
+        if (op.w > 4) piece((op.s0 + op.s1) / 2 - 0.12, (op.s0 + op.s1) / 2 + 0.12, op.sill, op.head, trim, t + 0.02)
+      }
     } else if (op.type === 'door') {
       if (op.style === 'garage') {
         piece(op.s0, op.s1, op.sill, op.head, mat(wall.level, '#f7f6f2', { roughness: 0.5 }), 0.15)
         for (let z = op.sill + 1.75; z < op.head - 0.2; z += 1.75) {
           piece(op.s0 + 0.1, op.s1 - 0.1, z - 0.04, z + 0.04, mat(wall.level, '#d9d7d0'), 0.22)
         }
-      } else if (op.style === 'front' || op.style === 'entry') {
-        const c = op.style === 'front' ? '#2f4a68' : '#f2efe8'
-        piece(op.s0, op.s1, op.sill, op.head, mat(wall.level, c, { roughness: 0.5 }), 0.18)
+      } else if (op.style === 'front') {
+        // Black 6-panel door with a small light, between two sidelights, in white casing (photo)
+        const black = mat(wall.level, '#1f2328', { roughness: 0.45 })
+        const white = mat(wall.level, '#ffffff')
+        const glass = mat(wall.level, '#c9d6de', { opacity: 0.7, roughness: 0.15 })
+        const mid = (op.s0 + op.s1) / 2
+        piece(mid - 1.5, mid + 1.5, op.sill, op.head, black, 0.18)
+        piece(mid - 0.8, mid + 0.8, op.head - 1.5, op.head - 0.5, glass, 0.22)
+        for (const [g0, g1] of [[op.s0, mid - 1.5], [mid + 1.5, op.s1]]) {
+          piece(g0, g1, op.sill, op.head, black, 0.12)
+          piece(g0 + 0.12, g1 - 0.12, op.sill + 0.8, op.head - 0.2, glass, 0.16)
+        }
+        piece(op.s0 - 0.3, op.s0, op.sill, op.head + 0.3, white, t + 0.12)
+        piece(op.s1, op.s1 + 0.3, op.sill, op.head + 0.3, white, t + 0.12)
+        piece(op.s0 - 0.3, op.s1 + 0.3, op.head, op.head + 0.4, white, t + 0.12)
+      } else if (op.style === 'entry') {
+        piece(op.s0, op.s1, op.sill, op.head, mat(wall.level, '#f2efe8', { roughness: 0.5 }), 0.18)
         piece(op.s0 - 0.25, op.s1 + 0.25, op.head, op.head + 0.3, mat(wall.level, '#ffffff'), t + 0.12)
       } else if (op.style === 'patio') {
+        // Two-panel sliding door in a white frame
+        const trim = mat(wall.level, '#ffffff')
         piece(op.s0, op.s1, op.sill, op.head, mat(wall.level, '#9fc3dd', { opacity: 0.45, roughness: 0.1 }), 0.06)
-        piece((op.s0 + op.s1) / 2 - 0.1, (op.s0 + op.s1) / 2 + 0.1, op.sill, op.head, mat(wall.level, '#ffffff'), t)
+        piece((op.s0 + op.s1) / 2 - 0.1, (op.s0 + op.s1) / 2 + 0.1, op.sill, op.head, trim, t)
+        piece(op.s0 - 0.2, op.s0 + 0.05, op.sill, op.head + 0.05, trim, t + 0.12)
+        piece(op.s1 - 0.05, op.s1 + 0.2, op.sill, op.head + 0.05, trim, t + 0.12)
+        piece(op.s0 - 0.2, op.s1 + 0.2, op.head - 0.05, op.head + 0.25, trim, t + 0.12)
+        piece(op.s0, op.s1, op.sill, op.sill + 0.12, trim, t + 0.06)
       }
     }
   }
-  piece(s, L + ext, 0, h, wallMat)
+  piece(s, L + e1, 0, h, wallMat)
+}
+
+// Interior stair railings (colors are a guess: no photo of the stair yet)
+const RAIL_COLORS = { handrail: '#5a3b28', baluster: '#fbfaf7', skirt: '#f6f4ef' }
+const BALUSTER_STEP = 0.35 // 4" max opening between balusters
+
+// Main stair and the basement stair under it, both L-shaped (see STAIR).
+function buildMainStairs(levelGroups, mat) {
+  const L1 = levelGroups.L1
+  const { x0, x1, landY0, landY1, topX, tread } = STAIR
+  const stairMat = mat('L1', COLORS.stair, { roughness: 0.6 })
+
+  // Main stair: 10 treads up toward the rear, the landing, 3 treads toward the kitchen side
+  const r = (H.ff2 - H.ff1) / STAIR.risers
+  const land = H.ff1 + (STAIR.lower + 1) * r
+  addStair(L1, { x0: x0 + 0.05, x1: x1 - 0.05, yLow: STAIR.bottomY, yHigh: landY1, zLow: H.ff1, zHigh: land - r, risers: STAIR.lower }, stairMat)
+  addBox(L1, x0 + 0.05, landY0, x1, landY1, land - 0.8, land, stairMat, { shadow: true })
+  addStair(L1, { alongX: true, xLow: x1, xHigh: topX, yLow: landY0, yHigh: landY1, zLow: land, zHigh: H.ff2 - r, risers: 3 }, stairMat)
+
+  // Basement stair: 3 treads down from the door at x 19 to a landing, then 9 toward the front
+  const br = (H.ff1 - H.basementFloor) / STAIR.bRisers
+  const bLand = H.ff1 - 4 * br
+  const bMat = mat('L1', '#a88a66', { roughness: 0.7 })
+  addStair(levelGroups.B, { x0: x0 + 0.05, x1: x1 - 0.05, yLow: STAIR.bBottomY, yHigh: landY1, zLow: H.basementFloor, zHigh: bLand - br, risers: STAIR.bLower }, mat('B', '#a88a66'))
+  addBox(L1, x0 + 0.05, landY0, x1, landY1, bLand - 0.6, bLand, bMat)
+  addStair(L1, { alongX: true, xLow: x1, xHigh: topX, yLow: landY0, yHigh: landY1, zLow: bLand, zHigh: bLand + 3 * br, risers: 3 }, bMat)
+
+  // Open sides of the main stair: a skirt wall from the floor up to the
+  // stringer, closing off the basement stair, with balusters and a handrail
+  // 36" above the nosing. Nosing line of each flight:
+  const noseLower = (y) => H.ff1 + r * (1 + (STAIR.bottomY - y) / tread)
+  const noseUpper = (x) => land + r * (1 + (x - x1) / tread)
+  const skirtMat = mat('L1', RAIL_COLORS.skirt)
+  const top = 0.3 // stringer above the nosing
+  sideWall(L1, skirtMat, 'y', x1, [[STAIR.bottomY, H.ff1], [landY1, H.ff1], [landY1, noseLower(landY1) + top], [STAIR.bottomY, noseLower(STAIR.bottomY) + top]])
+  sideWall(L1, skirtMat, 'x', landY1, [[x1, H.ff1], [topX, H.ff1], [topX, H.ff2], [x1, noseUpper(x1) + top]])
+
+  const railMat = mat('L1', RAIL_COLORS.handrail, { roughness: 0.5 })
+  const balMat = mat('L1', RAIL_COLORS.baluster)
+  balustrade(L1, railMat, balMat, [x1, STAIR.bottomY, noseLower(STAIR.bottomY) + top], [x1, landY1, noseLower(landY1) + top])
+  balustrade(L1, railMat, balMat, [x1, landY1, noseUpper(x1) + top], [topX, landY1, H.ff2])
+  // Newel posts: at the bottom step and at the turn
+  addBox(L1, x1 - 0.17, STAIR.bottomY - 0.34, x1 + 0.17, STAIR.bottomY, H.ff1, H.ff1 + r + 3.5, balMat, { shadow: true })
+  addBox(L1, x1 - 0.17, landY1 - 0.17, x1 + 0.17, landY1 + 0.17, H.ff1, noseUpper(x1) + 3.4, balMat, { shadow: true })
+}
+
+// Vertical wall with a sloped top, drawn as a polygon of [along, height]
+// points in the plane x = at (axis 'y') or y = at (axis 'x').
+function sideWall(group, material, axis, at, pts, t = 0.3) {
+  const shape = new THREE.Shape(pts.map(([s, z]) => new THREE.Vector2(s, z)))
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false })
+  const mesh = new THREE.Mesh(geo, material)
+  if (axis === 'y') {
+    mesh.rotation.y = -Math.PI / 2 // shape x -> world z, extrusion -> world -x
+    mesh.position.x = at + t / 2
+  } else {
+    mesh.position.z = at - t / 2
+  }
+  mesh.castShadow = mesh.receiveShadow = true
+  group.add(mesh)
+  return mesh
+}
+
+// Sloped handrail 3' above a line of [x, y, z] points, with balusters below it.
+function balustrade(group, railMat, balMat, a, b) {
+  const [ax, ay, az] = a
+  const [bx, by, bz] = b
+  const A = new THREE.Vector3(ax, az + 3, ay)
+  const B = new THREE.Vector3(bx, bz + 3, by)
+  const len = A.distanceTo(B)
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.15, 0.22), railMat)
+  rail.position.copy(A).add(B).multiplyScalar(0.5)
+  rail.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), B.clone().sub(A).normalize())
+  rail.castShadow = true
+  group.add(rail)
+  const run = Math.hypot(bx - ax, by - ay)
+  const n = Math.max(1, Math.round(run / BALUSTER_STEP))
+  for (let i = 1; i < n; i++) {
+    const f = i / n
+    const x = ax + (bx - ax) * f
+    const y = ay + (by - ay) * f
+    const z = az + (bz - az) * f
+    addBox(group, x - 0.04, y - 0.04, x + 0.04, y + 0.04, z, z + 2.92, balMat)
+  }
 }
 
 function addStair(group, s, material) {
@@ -1067,6 +1469,120 @@ function gableEnd(group, g, material) {
   m.castShadow = true
   m.receiveShadow = true
   group.add(m)
+}
+
+// Front porch, matched to a photo: brown composite floor over a white fascia
+// and dark lattice skirt, square white columns, white rails with black
+// balusters, white-riser steps with brown treads and handrails, white ceiling.
+const PORCH_POSTS = [0.25, 7, 14.4, 21.6, 28.6, 35.6]
+function buildPorch(group, roofGroup, mat, plain) {
+  const m = (c, o) => mat('L1', c, o)
+  const top = H.porchFloor
+  const [x0, x1, y0, y1] = [0, 35.83, 32, 36]
+  const white = m('#f7f6f2', { roughness: 0.5 })
+  const brown = m('#5d4231', { roughness: 0.7 })
+  const fasciaBot = top - 0.65
+
+  addBox(group, x0, y0, x1, y1, -0.01, 0.02, m('#3a332c', { roughness: 1 })) // shaded ground underneath
+  addBox(group, x0, y0, x1, y1, top - 0.02, top + 0.05, brown)
+  addBox(group, x0 - 0.05, y1 - 0.05, x1, y1 + 0.08, fasciaBot, top + 0.03, white)
+  addBox(group, x0 - 0.1, y0, x0 + 0.03, y1 + 0.08, fasciaBot, top + 0.03, white)
+  const lattice = latticeMaterial(mat, '#2b2724')
+  skirt(group, x0 - 0.04, y1 + 0.02, x1, y1 + 0.02, fasciaBot, lattice)
+  skirt(group, x0 - 0.04, y0, x0 - 0.04, y1 + 0.02, fasciaBot, lattice)
+  addBox(group, x0, y1 + 0.03, x1, y1 + 0.13, -0.05, 0.4, white)
+  addBox(group, x0 - 0.14, y0, x0 - 0.04, y1, -0.05, 0.4, white)
+  for (const x of PORCH_POSTS) addBox(group, x - 0.22, y1 + 0.03, x + 0.22, y1 + 0.13, 0, fasciaBot, white)
+
+  // Steps: 4 white risers, brown treads with a nosing
+  const steps = { x0: 15, x1: 21.2, yLow: 39.3, yHigh: 36, risers: 4 }
+  const rise = top / steps.risers
+  const run = (steps.yLow - steps.yHigh) / (steps.risers - 1) // the porch floor is the top step
+  addStair(group, { ...steps, zLow: 0, zHigh: top - rise, risers: steps.risers - 1, yHigh: steps.yHigh }, white)
+  for (let i = 0; i < steps.risers - 1; i++) {
+    const z = rise * (i + 1)
+    const yOut = steps.yLow - run * i
+    addBox(group, steps.x0 - 0.05, yOut + 0.08, steps.x1 + 0.05, yOut - run, z - 0.02, z + 0.06, brown)
+  }
+
+  // Columns with base and cap, rails, black balusters (roof group: outside view only)
+  const whiteOut = plain('#f7f6f2')
+  const black = plain('#1e2226')
+  const py = 35.62
+  for (const x of PORCH_POSTS) {
+    addBox(roofGroup, x - 0.25, py - 0.25, x + 0.25, py + 0.25, top, 9.9, whiteOut, { shadow: true })
+    addBox(roofGroup, x - 0.33, py - 0.33, x + 0.33, py + 0.33, top, top + 0.6, whiteOut)
+    addBox(roofGroup, x - 0.31, py - 0.31, x + 0.31, py + 0.31, 9.6, 9.9, whiteOut)
+  }
+  const balusters = []
+  const railRun = (ax, ay, bx, by) => {
+    beam(roofGroup, new THREE.Vector3(ax, top + 3, ay), new THREE.Vector3(bx, top + 3, by), 0.3, 0.2, whiteOut)
+    beam(roofGroup, new THREE.Vector3(ax, top + 0.35, ay), new THREE.Vector3(bx, top + 0.35, by), 0.22, 0.14, whiteOut)
+    const len = Math.hypot(bx - ax, by - ay)
+    for (let d = 0.35; d < len - 0.2; d += 0.38) balusters.push([ax + ((bx - ax) * d) / len, ay + ((by - ay) * d) / len])
+  }
+  for (let i = 0; i < PORCH_POSTS.length - 1; i++) {
+    if (i === 2) continue // the steps
+    railRun(PORCH_POSTS[i] + 0.25, py, PORCH_POSTS[i + 1] - 0.25, py)
+  }
+  railRun(x0 + 0.2, y0 + 0.3, x0 + 0.2, py - 0.25) // left end
+  const balMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 2.5, 0.06), black, balusters.length)
+  balusters.forEach(([x, y], i) => balMesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(x, top + 1.68, y)))
+  roofGroup.add(balMesh)
+  // Stair handrails from the porch columns down to newel posts at the bottom step
+  for (const x of [steps.x0 + 0.2, steps.x1 - 0.2]) {
+    addBox(roofGroup, x - 0.2, steps.yLow - 0.6, x + 0.2, steps.yLow - 0.2, 0, 3.3, whiteOut, { shadow: true })
+    addBox(roofGroup, x - 0.25, steps.yLow - 0.65, x + 0.25, steps.yLow - 0.15, 3.3, 3.45, whiteOut)
+    beam(roofGroup, new THREE.Vector3(x, top + 3, py), new THREE.Vector3(x, 3.1, steps.yLow - 0.4), 0.22, 0.18, whiteOut)
+    beam(roofGroup, new THREE.Vector3(x, top + 0.4, py), new THREE.Vector3(x, 0.5, steps.yLow - 0.4), 0.16, 0.12, whiteOut)
+  }
+
+  // White porch ceiling under the shed roof, and the lantern beside the door
+  addBox(roofGroup, -0.1, y0 + 0.3, 35.95, 35.5, 10.26, 10.3, whiteOut)
+  addBox(group, 14.25, y0 + 0.25, 14.65, y0 + 0.6, H.ff1 + 5.6, H.ff1 + 6.6, black)
+  addBox(group, 14.3, y0 + 0.62, 14.6, y0 + 0.66, H.ff1 + 5.8, H.ff1 + 6.4, new THREE.MeshStandardMaterial({ color: '#ffe2a3', emissive: '#ffe2a3', emissiveIntensity: 0.5 }))
+}
+
+// Hip roof over the kitchen bay: a front face and two angled side faces that
+// rise to the house wall, hip caps, white fascia and a white soffit.
+function bayRoof(group, roofMat, capMat, trimMat) {
+  const [, c0, c1] = BAY // centerline corners: wall-left, front-left, front-right, wall-right
+  const reach = 1 // half the wall plus a 9" overhang
+  const wallY = -0.25 // outside face of the rear wall
+  const frontY = c0[1] - reach
+  const corner = reach * Math.tan(Math.PI / 8) // the bay's corners are 135 degrees
+  const B = [c0[0] - corner, frontY]
+  const C = [c1[0] + corner, frontY]
+  const A = [B[0] - (wallY - frontY), wallY] // side eaves run back to the wall at 45 degrees
+  const D = [C[0] + (wallY - frontY), wallY]
+  const he = H.ff1 + 8 // eave at the top of the bay walls
+  const ht = he + 0.85 * (wallY - frontY) // about 10/12
+  const v = ([x, y], h) => [x, h, y]
+  const T1 = [B[0], wallY]
+  const T2 = [C[0], wallY]
+  const pos = [
+    ...v(B, he), ...v(C, he), ...v(T2, ht), ...v(T1, ht), // front face
+    ...v(A, he), ...v(B, he), ...v(T1, ht), // left side
+    ...v(C, he), ...v(D, he), ...v(T2, ht), // right side
+  ]
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  geo.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 7, 8, 9])
+  geo.computeVertexNormals()
+  const roof = new THREE.Mesh(geo, roofMat)
+  roof.position.y = 0.08
+  roof.castShadow = roof.receiveShadow = true
+  group.add(roof)
+
+  const P = (p, h) => new THREE.Vector3(p[0], h, p[1])
+  beam(group, P(B, he + 0.12), P(T1, ht + 0.12), 0.22, 0.08, capMat)
+  beam(group, P(C, he + 0.12), P(T2, ht + 0.12), 0.22, 0.08, capMat)
+  for (const [p, q] of [[A, B], [B, C], [C, D]]) beam(group, P(p, he - 0.12), P(q, he - 0.12), 0.12, 0.4, trimMat)
+  const soffit = new THREE.ShapeGeometry(new THREE.Shape([A, B, C, D].map(([x, y]) => new THREE.Vector2(x, y))))
+  soffit.rotateX(Math.PI / 2)
+  const soffitMesh = new THREE.Mesh(soffit, trimMat)
+  soffitMesh.position.y = he - 0.3
+  group.add(soffitMesh)
 }
 
 function shedRoof(group, r, material) {

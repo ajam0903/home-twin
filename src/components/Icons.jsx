@@ -37,6 +37,9 @@ export const Icon = {
   minus: (p) => (
     <svg {...base} {...p}><path d="M5 12h14" /></svg>
   ),
+  sofa: (p) => (
+    <svg {...base} {...p}><path d="M5 11V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3" /><path d="M3 12a2 2 0 0 1 4 0v2h10v-2a2 2 0 0 1 4 0v5H3z" /><path d="M5 17v2M19 17v2" /></svg>
+  ),
   fit: (p) => (
     <svg {...base} {...p}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
   ),

@@ -1,16 +1,171 @@
+import { useEffect, useState } from 'react'
 import {
-  HOME, ITEMS, ROOMS, levelById, levelName, roomById, itemById, roomArea, openingsForRoom, pointInPoly,
+  HOME, ITEMS, ROOMS, FLOORING_NAMES, FLOOR_FACTS, levelById, levelName, roomById, itemById, roomArea, openingsForRoom, pointInPoly, plantedInfo,
 } from '../model/house.js'
+import { feetInches } from '../model/furniture.js'
 import { Icon } from './Icons.jsx'
 
-export default function DetailPanel({ selection, onSelect, onClose, hideHeader = false }) {
+export default function DetailPanel({
+  selection, onSelect, onClose, hideHeader = false, level = 'exterior', furniture = [], onFurnitureChange, onFurnitureDelete,
+}) {
   if (selection?.kind === 'room' && roomById[selection.id]) {
-    return <RoomDetail room={roomById[selection.id]} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} />
+    return <RoomDetail room={roomById[selection.id]} furniture={furniture} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} />
   }
   if (selection?.kind === 'item' && itemById[selection.id]) {
     return <ItemDetail item={itemById[selection.id]} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} />
   }
+  const piece = selection?.kind === 'furniture' && furniture.find((f) => f.id === selection.id)
+  if (piece) {
+    return <FurnitureDetail piece={piece} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} onChange={onFurnitureChange} onDelete={onFurnitureDelete} />
+  }
+  if (levelById[level]) return <FloorOverview level={level} furniture={furniture} onSelect={onSelect} />
   return <HomeOverview />
+}
+
+const roomAt = (level, x, y) => ROOMS.find((r) => r.level === level && pointInPoly([x, y], r.poly))
+
+// Summary of one floor: size, finishes, rooms, systems and furniture
+function FloorOverview({ level, furniture, onSelect }) {
+  const lvl = levelById[level]
+  const facts = FLOOR_FACTS[level] ?? {}
+  const rooms = ROOMS.filter((r) => r.level === level)
+  const items = ITEMS.filter((i) => i.level === level)
+  const pieces = furniture.filter((f) => f.level === level)
+  const indoor = rooms.filter((r) => !['porch', 'deck', 'garage'].includes(r.type))
+  const count = (t) => rooms.filter((r) => r.type === t).length
+  const byFloor = {}
+  for (const r of indoor) if (r.flooring) byFloor[r.flooring] = (byFloor[r.flooring] ?? 0) + roomArea(r)
+  return (
+    <div className="detail">
+      <Header kicker="Floor overview" title={lvl.name} subtitle={`${indoor.length} rooms and spaces`} />
+      <div className="facts">
+        <Stat label="Area" value={facts.area ?? `about ${indoor.reduce((a, r) => a + roomArea(r), 0)} sq ft`} />
+        <Stat label="Ceiling" value={facts.ceiling ?? `${lvl.height}'-0"`} />
+        {count('bedroom') > 0 && <Stat label="Bedrooms" value={count('bedroom')} />}
+        {count('bath') > 0 && <Stat label="Baths" value={count('bath')} />}
+      </div>
+      {Object.keys(byFloor).length > 0 && (
+        <Section title="Flooring">
+          <dl className="kv">
+            {Object.entries(byFloor).map(([k, v]) => (
+              <div key={k}>
+                <dt>{FLOORING_NAMES[k]}</dt>
+                <dd>about {v} sq ft</dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
+      )}
+      <Section title="Rooms">
+        <div className="chips">
+          {rooms.map((r) => (
+            <button key={r.id} type="button" className="chip" onClick={() => onSelect({ kind: 'room', id: r.id })}>
+              <span className={`swatch t-${r.type}`} />
+              {r.name}
+              {r.subtitle && r.name === 'Closet' ? ` (${r.subtitle})` : ''}
+            </button>
+          ))}
+        </div>
+      </Section>
+      {items.length > 0 && (
+        <Section title="Systems">
+          <div className="chips">
+            {items.map((i) => (
+              <button key={i.id} type="button" className="chip" onClick={() => onSelect({ kind: 'item', id: i.id })}>
+                <span className="pin-dot" data-category={i.category} />
+                {i.name}
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
+      <Section title={`Furniture (${pieces.length})`}>
+        {pieces.length ? (
+          <div className="chips">
+            {pieces.map((f) => (
+              <button key={f.id} type="button" className="chip" onClick={() => onSelect({ kind: 'furniture', id: f.id })}>
+                <span className="swatch furniture" />
+                {f.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">None yet. Use “Add furniture” in the room list.</p>
+        )}
+      </Section>
+    </div>
+  )
+}
+
+// Edit one piece: name, size in inches, rotation; drag it in the 3D view to move it
+function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDelete }) {
+  const room = roomAt(piece.level, piece.x, piece.y)
+  const set = (patch) => onChange?.(piece.id, patch)
+  return (
+    <div className="detail">
+      {!hideHeader && <Header kicker={`Furniture · ${levelName(piece.level)}`} title={piece.name} onClose={onClose} />}
+      <label className="field">
+        <span>Name</span>
+        <input value={piece.name} onChange={(e) => set({ name: e.target.value })} />
+      </label>
+      <div className="dims">
+        <NumberField label="Width" unit="in" value={piece.w} onCommit={(v) => set({ w: v })} />
+        <NumberField label="Depth" unit="in" value={piece.d} onCommit={(v) => set({ d: v })} />
+        <NumberField label="Height" unit="in" value={piece.h} onCommit={(v) => set({ h: v })} />
+      </div>
+      <p className="muted">
+        {feetInches(piece.w)} wide x {feetInches(piece.d)} deep x {feetInches(piece.h)} high
+      </p>
+      <div className="stats">
+        <div className="stat">
+          <div className="stat-label">Located in</div>
+          {room ? (
+            <button type="button" className="link" onClick={() => onSelect({ kind: 'room', id: room.id })}>
+              {room.name}
+            </button>
+          ) : (
+            <div className="stat-value">Outside the rooms</div>
+          )}
+        </div>
+      </div>
+      <div className="button-row">
+        <button type="button" className="btn" onClick={() => set({ rot: ((piece.rot ?? 0) + 270) % 360 })}>
+          Rotate left
+        </button>
+        <button type="button" className="btn" onClick={() => set({ rot: ((piece.rot ?? 0) + 90) % 360 })}>
+          Rotate right
+        </button>
+        <button type="button" className="btn danger" onClick={() => onDelete?.(piece.id)}>
+          Remove
+        </button>
+      </div>
+      <p className="muted">Drag the piece in the 3D view to move it (floor views). Changes are saved in this browser.</p>
+    </div>
+  )
+}
+
+// Number input that keeps what you type and commits valid positive values
+function NumberField({ label, unit, value, onCommit }) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <span className="with-unit">
+        <input
+          inputMode="decimal"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value)
+            const v = Number(e.target.value)
+            if (v > 0 && v < 600) onCommit(v)
+          }}
+          onBlur={() => setText(String(value))}
+        />
+        <em>{unit}</em>
+      </span>
+    </label>
+  )
 }
 
 function Header({ kicker, title, subtitle, onClose }) {
@@ -30,9 +185,10 @@ function Header({ kicker, title, subtitle, onClose }) {
   )
 }
 
-function RoomDetail({ room, onSelect, onClose, hideHeader }) {
+function RoomDetail({ room, furniture, onSelect, onClose, hideHeader }) {
   const openings = openingsForRoom(room)
   const items = ITEMS.filter((i) => i.level === room.level && pointInPoly(i.at, room.poly))
+  const pieces = furniture.filter((f) => f.level === room.level && pointInPoly([f.x, f.y], room.poly))
   return (
     <div className="detail">
       {!hideHeader && <Header kicker={levelById[room.level].name} title={room.name} subtitle={room.subtitle} onClose={onClose} />}
@@ -40,6 +196,7 @@ function RoomDetail({ room, onSelect, onClose, hideHeader }) {
         <Stat label="Size on plan" value={room.dims} />
         <Stat label="Floor area" value={`about ${roomArea(room)} sq ft`} />
         <Stat label="Ceiling" value={room.ceiling} />
+        {room.flooring && <Stat label="Flooring" value={FLOORING_NAMES[room.flooring]} />}
       </div>
       {room.notes.length > 0 && (
         <Section title="From the drawings">
@@ -74,6 +231,18 @@ function RoomDetail({ room, onSelect, onClose, hideHeader }) {
           </div>
         </Section>
       )}
+      {pieces.length > 0 && (
+        <Section title="Furniture">
+          <div className="chips">
+            {pieces.map((f) => (
+              <button key={f.id} type="button" className="chip" onClick={() => onSelect({ kind: 'furniture', id: f.id })}>
+                <span className="swatch furniture" />
+                {f.name}
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
     </div>
   )
 }
@@ -93,13 +262,24 @@ function ItemDetail({ item, onSelect, onClose, hideHeader }) {
           </div>
         </div>
       )}
-      <Section title="From the drawings">
+      {item.planted && <PlantedStats planted={item.planted} />}
+      <Section title={item.level === 'site' ? 'Details' : 'From the drawings'}>
         <ul className="bullets">
           {item.details.map((d) => (
             <li key={d}>{d}</li>
           ))}
         </ul>
       </Section>
+    </div>
+  )
+}
+
+function PlantedStats({ planted }) {
+  const { label, age } = plantedInfo(planted)
+  return (
+    <div className="facts">
+      <Stat label="Planted" value={label} />
+      <Stat label="In the ground" value={age} />
     </div>
   )
 }
@@ -115,7 +295,7 @@ export function HomeOverview() {
         ))}
       </div>
       {HOME.sections.map((s) => (
-        <Section key={s.title} title={s.title}>
+        <Section key={s.title} title={s.title} collapsible>
           <dl className="kv">
             {s.rows.map(([k, v]) => (
               <div key={k}>
@@ -139,7 +319,18 @@ function Stat({ label, value }) {
   )
 }
 
-function Section({ title, children }) {
+function Section({ title, children, collapsible = false }) {
+  if (collapsible) {
+    // Closed by default; click the heading to open
+    return (
+      <details className="detail-section collapsible">
+        <summary>
+          <h3>{title}</h3>
+        </summary>
+        {children}
+      </details>
+    )
+  }
   return (
     <section className="detail-section">
       <h3>{title}</h3>

@@ -41,11 +41,12 @@ export function gradeAt(y) {
 }
 
 // ---------------------------------------------------------------- property
-// Rough sizes of the plantings today (about 2 years old), in feet.
+// Rough sizes of the plantings in fall 2026, 2.5 years after planting, in feet.
 export const PLANT_TYPES = {
   thuja: { name: 'Thuja Green Giant arborvitae', height: 8, spread: 3.2 },
   serviceberry: { name: `Autumn Brilliance serviceberry`, height: 8, spread: 5 },
   cherry: { name: 'Double pink weeping cherry', height: 6.5, spread: 6 },
+  maple: { name: 'Japanese maple', height: 22, spread: 20 },
 }
 
 // `count` plants evenly spaced along a line, each centered in its share of it.
@@ -56,9 +57,16 @@ function plantRow(kind, [ax, ay], [bx, by], count) {
   })
 }
 
-// From the property survey of Lot 56.01, Block 216 (scanned, to scale).
-// Lot lines are square to the house; plan coordinates as above.
-const LOT = { x0: -9.5, x1: 65.5, y0: -90.35, y1: 84.65 } // 75.00' x 175.00'
+// Lot 56.01, Block 216. Placed from the newer survey (owner, 2026-10-17): the
+// main house's left wall is 9.53' from the left line and the garage doors are
+// 48.00' from the street line. The older scanned survey (to scale) gives the
+// woods, flood limit and other features. Lot lines are square to the house.
+// The newer survey's right offset (8.28') would make the house 57.19' wide
+// against 57'-0" on the plans; the left offset is kept exact.
+// Points measured on the older survey (its rear-left corner was at -9.5, -90.35),
+// kept in place relative to the lot lines
+const fromOldSurvey = (pts) => pts.map(([x, y]) => [x + LOT.x0 + 9.5, y + LOT.y0 + 90.35])
+const LOT = { x0: -9.53, x1: -9.53 + 75, y0: 36 + 48 - 175, y1: 36 + 48 } // 75.00' x 175.00'
 export const SITE = {
   lot: LOT,
   // Required setback lines drawn on the survey
@@ -66,18 +74,23 @@ export const SITE = {
   // Bearing of the side lines is N 08 deg 32' E, so deed north is 8.53 deg
   // counterclockwise from "up" on the plans (toward the rear, -y).
   northDeg: 8.53,
-  curbY: LOT.y1 + 11.6, // concrete curb on Orchard Street
-  roadWidth: 30,
+  // Orchard Street (formerly Orchard Avenue), 60' right of way: curb about
+  // 12.7' out from the lot line on each side
+  curbY: LOT.y1 + 12.7,
+  roadWidth: 60 - 2 * 12.7,
   drive: { x0: 36.17, x1: 57 }, // asphalt, garage doors to the street
   neighborDrive: { x0: -18.5, x1: LOT.x0 + 0.3, y0: 23 }, // Lot 58 B, 0.3' over the line
-  walk: { x0: 16.2, x1: 36.17, y0: 36, y1: 44.2 }, // concrete at the porch steps
-  // 100-year flood limit, crossing the rear-left corner of the lot
-  flood: [[-19.8, -56.35], [-9.5, -59.25], [0.4, -65.05], [38.6, -90.35]],
+  // Concrete walk from the porch steps to the driveway, with planting beds
+  // along the porch on each side of the steps (owner)
+  walk: { x0: 15, x1: 36.17, y0: 39.3, y1: 43.3 },
+  beds: [{ x0: 0.2, x1: 14.5, y0: 36.15, y1: 39.3 }, { x0: 21.7, x1: 35.7, y0: 36.15, y1: 39.3 }],
+  // 100-year flood limit, crossing the rear-left corner of the lot (older survey)
+  flood: fromOldSurvey([[-19.8, -56.35], [-9.5, -59.25], [0.4, -65.05], [38.6, -90.35]]),
   // Edge of woods as surveyed (before the 2020 deck)
-  woods: [
+  woods: fromOldSurvey([
     [-21.6, -31.25], [-9.5, -30.95], [0.1, -30.15], [5.7, -30.95], [10.6, -28.35], [15.5, -25.25],
     [24.6, -21.35], [31.6, -15.65], [42.1, -9.65], [52.6, -4.25], [58.2, -2.15], [64.8, -1.05], [74, -10],
-  ],
+  ]),
   // Fences around the backyard (owner's markup and notes, 2026-10-17).
   // The wood stockade fence the survey shows on the right line is gone.
   fences: [
@@ -91,7 +104,7 @@ export const SITE = {
   // Between the garage's right wall and the right line: a fixed white vinyl
   // panel, then a single gate hinged on its left (garage) side.
   gate: { a: [57.25, 6.5], b: [LOT.x1 - 0.15, 6.5], hingeX: 61.3, height: 6 },
-  // Plantings, all about 2 years old (owner, 2026-10-17). Sizes are estimates.
+  // Plantings, all put in April 2024 (owner, 2026-10-17). Sizes are estimates.
   plants: [
     // 12 Thuja Green Giant arborvitae, evenly spaced 3' in front of the back fence
     ...plantRow('thuja', [LOT.x0, LOT.y0 + 3.15], [LOT.x1, LOT.y0 + 3.15], 12),
@@ -100,13 +113,30 @@ export const SITE = {
     ...plantRow('thuja', [-2.8, -1.9], [-2.8, -19.4], 4),
     { kind: 'serviceberry', at: [27.6, -29.1] },
     { kind: 'cherry', at: [8.9, -29.1] },
+    // Front yard (owner's markup), mature multi-trunk trees
+    { kind: 'maple', at: [3.6, 40.2] },
+    { kind: 'maple', at: [28.2, 49.5] },
   ],
-  pole: [71.4, 93.75], // utility pole by the P.O.B.
+  // Downspout drains and French drain (owner's markup on a later survey,
+  // 2026-10-17), scaled off that drawing. Pipes are buried.
+  drainage: {
+    // [x, y, gutter height]: downspouts tied into the solid pipe
+    downspouts: [[-0.3, 31.7, 19.6], [-0.3, -0.3, 19.6], [57.3, 3.3, 9.9], [57.3, 35.7, 9.9]],
+    // 4" solid pipe from the downspouts, back along both side yards and across the back
+    solid: [
+      [[-0.3, 31.7], [-4.3, 30.4], [-3.8, -1.6], [-3.6, -88.9], [59.4, -82.4], [60.4, 3.3], [59.7, 33.4], [57.3, 35.7]],
+      [[-0.3, -0.3], [-3.8, -1.6]],
+      [[57.3, 3.3], [60.4, 3.3]],
+    ],
+    // 4" perforated pipe in a fabric-wrapped trench of 3/4" clean stone
+    french: [[35.8, -85.6], [62.6, -86.1], [63.9, -49.6]],
+  },
+  pole: [LOT.x1 + 5.7, LOT.y1 + 9.5], // utility pole by the P.O.B.
   // Overhead service drop lands high on the garage's right side wall and runs
   // down the wall to the meter, about 7.5' back from the front corner.
   service: { x: 57.25, y: 28.5, attachZ: 15, meterZ: 5 },
   corners: [
-    { at: [LOT.x1, LOT.y1], label: 'Iron bar found (P.O.B.)' },
+    { at: [LOT.x1, LOT.y1], label: 'Pipe found (P.O.B.); the older survey shows an iron bar' },
     { at: [LOT.x1, LOT.y0], label: `Iron pipes found, 0.5' S / 0.3' E and 0.2' S` },
     { at: [LOT.x0, LOT.y0], label: 'Iron pipe with cap' },
     { at: [LOT.x0, LOT.y1], label: 'Front left corner (no marker noted)' },
@@ -115,7 +145,7 @@ export const SITE = {
 
 // Kitchen bay, cantilevered off the rear wall (centerlines). Sizes from the
 // deck plan's outline of the house: 9'-3" at the wall, 6'-0" face, 1'-7" out.
-const BAY = [[16.68, 0], [18.3, -1.62], [24.3, -1.62], [25.92, 0]]
+export const BAY = [[16.68, 0], [18.3, -1.62], [24.3, -1.62], [25.92, 0]]
 
 // ---------------------------------------------------------------- deck
 // Trex deck built in 2020 (Jeffrey A. Fleisher, AIA, project 2001-71, sheets
@@ -134,9 +164,10 @@ export const DECK = {
   depth: 18,
   landing: { x0: 28.05, x1: 32.05, depth: 4 }, // 4'-0" x 4'-0", stair side
   stair: { x0: 28.05, x1: 32.05, from: 4, treads: 7, run: 6.43 }, // DN away from the house
-  pad: { depth: 1 }, // 1' x 4' x 4" concrete pad at the bottom
   joistBottom: 0.69, // 5/4 decking + 2x8 joists
   beams: [8, 16], // (3) 2x10 beams, 2'-0" cantilever past the outer one
+  // Lattice door in the skirt on the stair side, between the stair and the outer corner (photo)
+  skirtDoor: { d0: 12.9, d1: 15.9 },
   // 6x6 PT posts on Goliath Tech helical piers: [x, d, footing no., required load lb]
   posts: [
     [31.78, 3.75, 1, 246],
@@ -205,6 +236,28 @@ function opening(at, w, label, h = 6.67) {
 }
 
 const W = 36.17 // main house width (36'-2")
+
+// Main stair (sheets 2 and 3): 3'-0" wide against the living room wall, up
+// toward the rear: 10 treads to a 3'-0" landing, then 3 treads turning toward
+// the kitchen side, arriving on the second floor at x 19. The basement stair
+// runs underneath with the same L (sheet 1: 14 risers, 13 treads): down from
+// a 2'-8" door at the back of the foyer, 3 treads to a landing, then 9 treads
+// toward the front. Treads are 10".
+export const STAIR = {
+  x0: 13.5, x1: 16.5, // flight width
+  landY0: 15.75, landY1: 18.75, // landing, back to front
+  topX: 19.0, // top riser of the turn (both stairs)
+  tread: 10 / 12,
+  risers: 15, lower: 10, // main stair: risers in the long flight (the landing is the 11th)
+  bRisers: 14, bLower: 9, // basement stair: treads in its long flight
+}
+STAIR.bottomY = STAIR.landY1 + STAIR.lower * STAIR.tread // first riser of the main stair
+STAIR.bBottomY = STAIR.landY1 + STAIR.bLower * STAIR.tread // last riser of the basement stair
+// Garage wing partitions (optional study plan, adjusted to the house): x of the
+// walls between the back rooms, y of the wall along the back hall, and y of the
+// back of the pantry, a 2' reach-in the laundry room wraps behind. The study
+// is 109" wide inside (owner); the plan says 9'-10".
+const WING = { powderX: 40.75, pantryX: 43.25, studyX: 47.5, roomsY: 10.75, pantryBackY: 8.4 }
 const D = 32 // main house depth
 const GX = 57 // overall width incl. garage
 const EXT = 0.5
@@ -230,7 +283,7 @@ export const ROOMS = [
       '12" CMU foundation walls on 24" x 10" continuous concrete footing',
       '(2) 2x10 Microlam drop girder on 4" lally columns at about 5\'-9" o.c.',
       'Waterproofing below grade, 4" interior perimeter drain to sump pit',
-      'Washer / dryer hook-up provided here if the optional study is built',
+      'The plans call for washer / dryer hook-ups here with the optional study; the laundry is on the first floor',
     ],
   },
 
@@ -254,7 +307,9 @@ export const ROOMS = [
     level: 'L1',
     name: 'Kitchen / dinette',
     type: 'kitchen',
-    poly: [[16.67, 0], BAY[1], BAY[2], BAY[3], [W, 0], [W, 15.5], [16.67, 15.5]],
+    // Includes the recess that juts into the dining room: refrigerator alcove,
+    // then the short passage to the dining room's framed opening
+    poly: [[16.67, 0], BAY[1], BAY[2], BAY[3], [W, 0], [W, 17.85], [25.1, 17.85], [25.1, 15.5], [16.67, 15.5]],
     labelAt: [21.5, 9],
     dims: '19\'-0" x 14\'-11" plus bay',
     ceiling: "9'-0\"",
@@ -262,7 +317,11 @@ export const ROOMS = [
       'Cantilevered bay with patio door and two tempered 2046 side windows',
       '(2) 2x12 Microlam header over the bay',
       'C235 casement over the sink, GFI outlets at 44" AFF',
-      'Optional dishwasher on the plumbing riser',
+      'Honey oak cabinets, black granite counters, dark backsplash, stainless appliances',
+      'Gas range under a hood, dishwasher beside the sink',
+      'French-door refrigerator and a microwave counter in an alcove under a (2) 2x14 Microlam header',
+      '3\'-0" openings to the dining room and to the back of the foyer',
+      'Island with seating for two; dinette table by the bay and the half wall',
     ],
   },
   {
@@ -280,26 +339,63 @@ export const ROOMS = [
     level: 'L1',
     name: 'Foyer & stair',
     type: 'hall',
-    poly: rect(13.5, 15.5, 22.67, D),
+    // The basement stairwell is cut out (its own room below)
+    poly: [
+      [STAIR.topX, 15.5], [22.67, 15.5], [22.67, D], [13.5, D], [13.5, 25.4],
+      [STAIR.x1, 25.4], [STAIR.x1, STAIR.landY1], [STAIR.topX, STAIR.landY1],
+    ],
     labelAt: [19.6, 29.5],
     dims: '8\'-10" wide, two-story',
     ceiling: 'Open to second floor',
     notes: [
       'Front entry: 3\'-0" x 6\'-8" metal insulated door',
-      'Stair: 15 risers at 8.25" max, 14 treads at 10"',
+      'Stair: 15 risers at 8.25" max, 14 treads at 10"; up toward the rear to a 3\'-0" landing, then 3 treads toward the kitchen side',
       'Handrails both sides at 36" above nosing, balusters at 4" max opening',
-      'Basement stair below, behind a 2\'-8" door',
+      'Back of the foyer: 3\'-0" opening to the kitchen, 2\'-8" door to the basement stair, coat closet',
     ],
+  },
+  {
+    id: 'bstair',
+    level: 'L1',
+    name: 'Basement stair',
+    type: 'hall',
+    floor: H.ff1 - 4 * ((H.ff1 - H.basementFloor) / STAIR.bRisers), // landing under the main stair's landing
+    poly: rect(STAIR.x0, 15.5, STAIR.topX, STAIR.landY1),
+    labelAt: [16.2, 17.1],
+    dims: '3\'-0" wide',
+    ceiling: 'Under the main stair',
+    notes: [
+      '2\'-8" x 6\'-8" wood door from the back of the foyer',
+      '14 risers at 8.25" max, 13 treads at 10": 3 treads down to a landing, then 9 toward the front',
+      'Handrails both sides at 36" above nosing',
+    ],
+  },
+  {
+    id: 'coat',
+    level: 'L1',
+    name: 'Coat closet',
+    subtitle: 'Foyer',
+    type: 'closet',
+    poly: rect(22.67, 15.5, 25.1, 19.0),
+    dims: '2\'-0" deep',
+    ceiling: "9'-0\"",
+    notes: ['2\'-0" door from the back of the foyer', 'Pole and shelf'],
   },
   {
     id: 'dining',
     level: 'L1',
     name: 'Dining room',
     type: 'living',
-    poly: rect(22.67, 15.5, W, D),
+    // Coat closet in the back-left corner, the kitchen's recess along the back
+    poly: [[22.67, 19.0], [25.1, 19.0], [25.1, 17.85], [W, 17.85], [W, D], [22.67, D]],
+    labelAt: [29.4, 24.6],
     dims: '13\'-0" x 14\'-1"',
     ceiling: "9'-0\"",
-    notes: ['6\'-6" cased opening to the foyer under a (2) 2x10 header', '3\'-0" framed opening to the kitchen'],
+    notes: [
+      '6\'-6" cased opening to the foyer under a (2) 2x10 header, toward the front',
+      '3\'-0" x 6\'-8" framed opening to the kitchen',
+      'The kitchen\'s refrigerator alcove and the coat closet take the back of the room',
+    ],
   },
   {
     id: 'porch',
@@ -335,46 +431,82 @@ export const ROOMS = [
       `2x8 PT joists at 16" o.c. on (3) 2x10 beams at 8'-0" and 16'-0", 2'-0" cantilever`,
       `Seven 6x6 PT posts on Goliath Tech helical piers (10" helix, 3'-0" min. deep)`,
       'Ledger: 3 5/8" LedgerLOK bolts, staggered; Simpson DTT1Z tension ties at 4 places',
-      `Stair: 7 treads down to a 1' x 4' x 4" concrete pad, riser lights, graspable handrail`,
-      'Lattice skirt with a gate on the far side',
+      `Stair: 7 treads down to the lawn (the plans show a 1' x 4' concrete pad; there is none), riser lights`,
+      'Lattice skirt in brown frame panels, with a lattice door on the stair side',
       'Design loads: 50 PSF live, 10 PSF dead, 115 mph wind',
     ],
   },
 
-  // First floor, garage wing
+  // First floor, garage wing: built to the optional study plan (sheet 2). Along
+  // the back, left to right: powder room, pantry closet, laundry room (owner),
+  // then the study; a back hall runs along the garage wall. The three small
+  // rooms share the plan's 8'-0" bath plus closet strip; their widths are estimates.
   {
     id: 'powder',
     level: 'L1',
     name: 'Powder room',
     type: 'bath',
-    poly: rect(W, 3, 40, 9.8),
-    dims: '3\'-4" x 6\'-8"',
+    poly: rect(W, 3, WING.powderX, WING.roomsY),
+    dims: `about 4'-4" x 7'-4"`,
     ceiling: "8'-0\"",
-    notes: ['Andersen 3032 window', 'Toilet and lavatory (plumbing riser, first floor)'],
+    notes: ['Toilet and lavatory', 'Andersen 3032 window', '2\'-8" x 6\'-8" wood door from the back hall'],
+  },
+  {
+    id: 'pantry',
+    level: 'L1',
+    name: 'Pantry closet',
+    type: 'closet',
+    poly: rect(WING.powderX, WING.pantryBackY, WING.pantryX, WING.roomsY),
+    dims: `about 2'-2" wide x 2'-0" deep (reach-in)`,
+    ceiling: "8'-0\"",
+    notes: ['Shelving on the back wall', 'Door from the back hall', 'The laundry room wraps behind it'],
+  },
+  {
+    id: 'laundry',
+    level: 'L1',
+    name: 'Laundry room',
+    type: 'utility',
+    poly: [
+      [WING.powderX, 3], [WING.studyX, 3], [WING.studyX, WING.roomsY], [WING.pantryX, WING.roomsY],
+      [WING.pantryX, WING.pantryBackY], [WING.powderX, WING.pantryBackY],
+    ],
+    labelAt: [45.4, 6.4],
+    dims: `L-shaped: about 3'-11" wide at the door, 6'-5" behind the pantry, 7'-4" deep`,
+    ceiling: "8'-0\"",
+    notes: [
+      'Washer and dryer side by side in the alcove behind the pantry, facing the door',
+      'Wire shelf across the back wall',
+      'Tile floor',
+      'Door from the back hall',
+    ],
   },
   {
     id: 'backhall',
     level: 'L1',
     name: 'Back hall',
     type: 'hall',
-    poly: rect(W, 9.8, 40, 14),
-    dims: '4\'-0" deep',
-    ceiling: "8'-0\"",
-    notes: ['3\'-0" x 6\'-8" framed opening to the kitchen'],
-  },
-  {
-    id: 'mudroom',
-    level: 'L1',
-    name: 'Mudroom / laundry',
-    type: 'utility',
-    poly: rect(40, 3, 49, 14),
-    dims: 'about 8\'-6" x 10\'-6"',
+    poly: rect(W, WING.roomsY, WING.studyX, 14),
+    dims: '3\'-4" deep',
     ceiling: "8'-0\"",
     notes: [
-      'No rear entry: the plans show a door and stairs down to grade, but the rear wall is solid',
-      'Door to garage: 3\'-0" x 6\'-8" metal insulated, stairs down',
-      'Washer and dryer; laundry tub on the plumbing riser',
-      'The optional study plan turns this wing into a study and full bath',
+      '2\'-8" x 6\'-8" framed opening to the kitchen',
+      '3\'-0" x 6\'-8" 20-minute door with closer to the garage, steps down',
+      'Doors to the powder room, pantry, laundry and study',
+    ],
+  },
+  {
+    id: 'study',
+    level: 'L1',
+    name: 'Study',
+    type: 'living',
+    poly: rect(WING.studyX, 3, GX, 14),
+    dims: '9\'-1" x 11\'-0"',
+    ceiling: "8'-0\" (2x6 ceiling joists at 16\" o.c.)",
+    notes: [
+      '(2) Andersen 3046 windows, R.O. 6\'-3 15/16" x 4\'-9 1/4"',
+      '2\'-8" x 6\'-8" wood door from the back hall',
+      'Built as the optional study plan on sheet 2, behind the garage',
+      '109" wide inside (the plan says 9\'-10")',
     ],
   },
   {
@@ -383,9 +515,8 @@ export const ROOMS = [
     name: 'Two-car garage',
     type: 'garage',
     floor: H.garageFloor,
-    poly: [[49, 3], [GX, 3], [GX, 36], [W, 36], [W, 14], [49, 14]],
-    labelAt: [46.5, 25],
-    dims: '20\'-6" x 21\'-0" plus 7\'-6" rear bay',
+    poly: rect(W, 14, GX, 36),
+    dims: '20\'-6" x 21\'-0"',
     ceiling: "8'-0\" (2x6 joists)",
     notes: [
       'Two 8\'-0" x 7\'-0" overhead doors on (2) 2x10 Microlam headers',
@@ -471,8 +602,8 @@ export const ROOMS = [
     name: 'Upper hall',
     type: 'hall',
     poly: [
-      [8.1, 12], [25.67, 12], [25.67, 13.33], [22.67, 13.33], [22.67, 20.4], [16.5, 20.4],
-      [16.5, 16.5], [13.5, 16.5], [13.5, 20.4], [9.8, 20.4], [9.8, 17.9], [8.1, 17.9],
+      [8.1, 12], [25.67, 12], [25.67, 13.33], [22.67, 13.33], [22.67, STAIR.landY1], [STAIR.topX, STAIR.landY1],
+      [STAIR.topX, STAIR.landY0], [13.5, STAIR.landY0], [13.5, 20.4], [9.8, 20.4], [9.8, 17.9], [8.1, 17.9],
     ],
     labelAt: [19.5, 14.6],
     dims: 'Overlooks the two-story foyer',
@@ -509,22 +640,51 @@ export const ROOMS = [
     poly: rect(22.67, 13.33, W, D),
     dims: '13\'-0" x 18\'-6"',
     ceiling: "8'-0\"",
-    notes: ['2x10 rafters and 2x10 ceiling joists at 16" o.c.', 'Walk-in closet over the garage'],
+    notes: ['2x10 rafters and 2x10 ceiling joists at 16" o.c.', 'Door to the sleeping nook (former walk-in closet) over the garage'],
   },
   {
     id: 'mcloset',
     level: 'L2',
-    name: 'Master closet',
-    type: 'closet',
+    name: 'Sleeping nook',
+    subtitle: 'Former master closet',
+    type: 'bedroom',
     poly: rect(W, 14.25, 45.67, 24.75),
     dims: '9\'-0" x 9\'-10"',
     ceiling: '6\'-8" plate height',
     notes: [
-      'Built into the garage roof, pole and shelf on two walls',
-      'Access panel into the attic storage above the garage (24" x 36" min.)',
+      'Built as the master walk-in closet over the garage; now a sleeping area with a twin bed',
+      'Door from the master bedroom; door on the right wall to the closet extension',
     ],
   },
+  {
+    id: 'closetext',
+    level: 'L2',
+    name: 'Closet extension',
+    subtitle: 'Under the garage roof',
+    type: 'closet',
+    // L-shaped: behind the nook across the wing, and beside it to the front (owner's markup)
+    poly: [[W, 11], [55.4, 11], [55.4, 24.75], [45.67, 24.75], [45.67, 14.25], [W, 14.25]],
+    labelAt: [50.5, 19.5],
+    dims: `L-shaped: about 19' x 3' behind the nook, 9'-5" x 10'-6" beside it`,
+    ceiling: 'Sloped under the garage roof, low knee walls at the back and side',
+    notes: ['Carpeted', 'Built into the attic space over the garage', 'Door from the sleeping nook'],
+  },
 ]
+
+// Floor finishes (owner, 2026-10-17): carpet in the study, family room and
+// living room and all of the second floor, hardwood everywhere else. Baths and the laundry room are tile
+// (the laundry photo shows white tile).
+const CARPETED = new Set(['study', 'family', 'living'])
+export const FLOORING_NAMES = { carpet: 'Carpet', hardwood: 'Hardwood', tile: 'Tile', concrete: 'Concrete' }
+for (const r of ROOMS) {
+  if (r.flooring !== undefined) continue
+  if (CARPETED.has(r.id)) r.flooring = 'carpet'
+  else if (r.type === 'bath' || r.id === 'laundry') r.flooring = 'tile'
+  else if (r.level === 'L2') r.flooring = 'carpet'
+  else if (r.type === 'garage' || r.type === 'basement') r.flooring = 'concrete'
+  else if (r.type === 'porch' || r.type === 'deck') r.flooring = null
+  else r.flooring = 'hardwood'
+}
 
 export const roomById = Object.fromEntries(ROOMS.map((r) => [r.id, r]))
 
@@ -556,15 +716,15 @@ export const WALLS = [
   {
     level: 'L1', a: [0, D], b: [W, D], t: EXT, ext: true,
     openings: [
-      win('3052', 3.75), win('3052', 10.25),
-      door(18.1, 3, '3\'-0" x 6\'-8" metal insulated front entry door', { style: 'front' }),
-      win('3052', 25.75), win('3052', 32.25),
+      ...[3.75, 10.25].map((x) => ({ ...win('3052', x), shutters: true })),
+      door(18.1, 5.3, '3\'-0" x 6\'-8" front entry door with two sidelights', { style: 'front' }),
+      ...[25.75, 32.25].map((x) => ({ ...win('3052', x), shutters: true })),
     ],
   },
   { level: 'L1', a: [W, 0], b: [W, 3], t: EXT, ext: true },
   {
     level: 'L1', a: [W, 3], b: [W, 14], t: INT,
-    openings: [opening(12, 3, '3\'-0" x 6\'-8" framed opening')],
+    openings: [opening(12.4, 2.67, '2\'-8" x 6\'-8" framed opening')],
   },
   // House | garage fire wall
   { level: 'L1', a: [W, 14], b: [W, D], t: EXT, base: H.garageFloor, h: H.ceil1 - H.garageFloor },
@@ -574,8 +734,9 @@ export const WALLS = [
   {
     level: 'L1', a: [W, 3], b: [GX, 3], t: EXT, ext: true, base: H.garageFloor, h: H.garagePlate - H.garageFloor,
     openings: [
-      // The plans show a rear entry door at x 44.3; the house has a plain wall there.
-      win('3032', 38.2, { head: 7 + H.ff1 - H.garageFloor }),
+      // Optional study plan: 3032 at the powder room, (2) 3046 at the study, no rear door
+      win('3032', W + 3.5, { head: 7 + H.ff1 - H.garageFloor }),
+      win('3046', W + 3.5 + 12.08, { twin: true, head: 7 + H.ff1 - H.garageFloor }),
     ],
   },
   { level: 'L1', a: [GX, 3], b: [GX, 36], t: EXT, ext: true, base: H.garageFloor, h: H.garagePlate - H.garageFloor },
@@ -592,24 +753,53 @@ export const WALLS = [
     level: 'L1', a: [0, 15.5], b: [W, 15.5], t: INT,
     openings: [
       opening(11, 4, '4\'-0" x 6\'-8" framed opening'),
-      opening(20.3, 3, 'Opening to the back of the foyer'),
-      opening(27.1, 3, '3\'-0" x 6\'-8" framed opening'),
+      opening(20.75, 3, '3\'-0" opening to the back of the foyer'),
+      // The (2) 2x14 Microlam header is flush with the ceiling here (owner): open full height
+      opening(30.63, 10.67, 'Open to the refrigerator alcove; (2) 2x14 Microlam header in the ceiling', 9),
     ],
+  },
+  // Back wall of the kitchen's recess (refrigerator alcove and the passage to
+  // the dining room), built out into the dining room
+  {
+    level: 'L1', a: [25.1, 17.85], b: [W, 17.85], t: INT,
+    openings: [opening(27.45, 3, '3\'-0" x 6\'-8" framed opening to the dining room')],
+  },
+  // Coat closet (pole and shelf) and the basement stair door at the back of the foyer
+  { level: 'L1', a: [25.1, 15.5], b: [25.1, 19.0], t: INT },
+  { level: 'L1', a: [22.67, 19.0], b: [25.1, 19.0], t: INT },
+  {
+    level: 'L1', a: [STAIR.topX, 15.5], b: [STAIR.topX, STAIR.landY1], t: INT,
+    openings: [door(17.15, 2.67, '2\'-8" x 6\'-8" wood door to the basement stair', { style: 'interior' })],
   },
   { level: 'L1', a: [16.67, 0], b: [16.67, 9.4], t: INT, kind: 'knee', h: 3 },
   { level: 'L1', a: [13.5, 15.5], b: [13.5, D], t: INT, openings: [opening(29.6, 3.4, 'Cased opening')] },
-  { level: 'L1', a: [16.5, 18.6], b: [16.5, 28], t: INT, kind: 'knee', h: 3.2 },
-  { level: 'L1', a: [22.67, 15.5], b: [22.67, D], t: INT, openings: [opening(24.35, 6.5, '6\'-6" cased opening')] },
-  // Garage wing interior (raised to first floor level)
   {
-    level: 'L1', a: [40, 3], b: [40, 9.8], t: INT, h: 8,
-    openings: [door(8.1, 2.67, '2\'-8" x 6\'-8" wood door', { style: 'interior' })],
+    level: 'L1', a: [22.67, 15.5], b: [22.67, D], t: INT,
+    openings: [
+      door(17.55, 2, '2\'-0" x 6\'-8" coat closet door', { style: 'interior' }),
+      opening(27.55, 6.5, '6\'-6" cased opening'),
+    ],
   },
-  { level: 'L1', a: [W, 9.8], b: [40, 9.8], t: INT, h: 8 },
-  { level: 'L1', a: [W, 14], b: [49, 14], t: EXT, base: H.garageFloor, h: H.garagePlate - H.garageFloor },
+  // Garage wing interior (raised to first floor level, 8'-0" ceilings)
+  { level: 'L1', a: [WING.powderX, 3], b: [WING.powderX, WING.roomsY], t: INT, h: 8 },
+  { level: 'L1', a: [WING.pantryX, WING.pantryBackY], b: [WING.pantryX, WING.roomsY], t: INT, h: 8 },
+  { level: 'L1', a: [WING.powderX, WING.pantryBackY], b: [WING.pantryX, WING.pantryBackY], t: INT, h: 8 },
   {
-    level: 'L1', a: [49, 3], b: [49, 14], t: EXT, base: H.garageFloor, h: H.garagePlate - H.garageFloor,
-    openings: [door(12, 3, '3\'-0" x 6\'-8" metal insulated door to garage', { h: 6.67 + H.ff1 - H.garageFloor, sill: H.ff1 - H.garageFloor, style: 'entry' })],
+    level: 'L1', a: [WING.studyX, 3], b: [WING.studyX, 14], t: INT, h: 8,
+    openings: [door(12.4, 2.67, '2\'-8" x 6\'-8" wood door', { style: 'interior' })],
+  },
+  {
+    level: 'L1', a: [W, WING.roomsY], b: [WING.studyX, WING.roomsY], t: INT, h: 8,
+    openings: [
+      door(39.2, 2.67, '2\'-8" x 6\'-8" wood door', { style: 'interior' }),
+      door((WING.powderX + WING.pantryX) / 2, 2, '2\'-0" x 6\'-8" pantry door', { style: 'interior' }),
+      door((WING.pantryX + WING.studyX) / 2, 2.67, '2\'-8" x 6\'-8" laundry door', { style: 'interior' }),
+    ],
+  },
+  // Load-bearing wall between the wing and the garage
+  {
+    level: 'L1', a: [W, 14], b: [GX, 14], t: EXT, base: H.garageFloor, h: H.garagePlate - H.garageFloor,
+    openings: [door(38.1, 3, '3\'-0" x 6\'-8" 20-minute door with closer to the garage', { h: 6.67 + H.ff1 - H.garageFloor, sill: H.ff1 - H.garageFloor, style: 'entry' })],
   },
 
   // Second floor exterior
@@ -623,7 +813,8 @@ export const WALLS = [
   },
   {
     level: 'L2', a: [0, D], b: [W, D], t: EXT, ext: true,
-    openings: [3.75, 10.25, 18.1, 25.75, 32.25].map((x) => win('3046', x, { head: 6.83 })),
+    // Shutters on every front window except the center one under the gable (photo)
+    openings: [3.75, 10.25, 18.1, 25.75, 32.25].map((x) => ({ ...win('3046', x, { head: 6.83 }), shutters: x !== 18.1 })),
   },
   { level: 'L2', a: [0, 0], b: [0, D], t: EXT, ext: true, openings: [win('2032', 16.3, { head: 6.83 })] },
   {
@@ -659,18 +850,30 @@ export const WALLS = [
     level: 'L2', a: [0, 20.4], b: [13.5, 20.4], t: INT,
     openings: [door(7.6, 2.67, '2\'-8" x 6\'-8" wood door', { style: 'interior' }), door(11.7, 2.67, '2\'-8" x 6\'-8" wood door', { style: 'interior' })],
   },
-  { level: 'L2', a: [13.5, 20.4], b: [13.5, D], t: INT },
-  { level: 'L2', a: [16.5, 16.5], b: [16.5, 20.4], t: 0.25, kind: 'rail', h: 3 },
-  { level: 'L2', a: [16.5, 20.4], b: [22.67, 20.4], t: 0.25, kind: 'rail', h: 3 },
+  { level: 'L2', a: [13.5, STAIR.landY0], b: [13.5, D], t: INT },
+  // Guards around the stairwell and the two-story foyer
+  { level: 'L2', a: [13.5, STAIR.landY0], b: [STAIR.topX, STAIR.landY0], t: 0.25, kind: 'rail', h: 3 },
+  { level: 'L2', a: [STAIR.topX, STAIR.landY1], b: [22.67, STAIR.landY1], t: 0.25, kind: 'rail', h: 3 },
   // Master closet tucked under the garage roof (6'-8" +/- plate height)
   { level: 'L2', a: [W, 14.25], b: [45.67, 14.25], t: INT, h: 6.3 },
-  { level: 'L2', a: [45.67, 14.25], b: [45.67, 24.75], t: INT, h: 6.3 },
-  { level: 'L2', a: [W, 24.75], b: [45.67, 24.75], t: INT, h: 6.3 },
+  {
+    level: 'L2', a: [45.67, 14.25], b: [45.67, 24.75], t: INT, h: 6.3,
+    openings: [door(16.2, 2.67, 'Door to the closet extension', { style: 'interior' })],
+  },
+  { level: 'L2', a: [W, 24.75], b: [55.4, 24.75], t: INT, h: 6.3 },
+  // Closet extension: knee walls under the sloped garage roof
+  { level: 'L2', a: [W, 11], b: [55.4, 11], t: INT, h: 3.9 },
+  { level: 'L2', a: [55.4, 11], b: [55.4, 24.75], t: INT, h: 3.9 },
 ]
 
 // ---------------------------------------------------------------- fixtures
 // Built-ins drawn on the plans. z0/z1 are heights above the level's floor
 // (or above `floor` when given). shape: box (default) or cyl.
+
+const OAK = '#caa26c' // honey oak cabinets
+const GRANITE = '#1c1d1f' // black granite
+const STEEL = '#b9bcc0' // stainless
+const SPLASH = '#2e3a40' // dark backsplash
 
 export const FIXTURES = [
   // Basement
@@ -680,13 +883,39 @@ export const FIXTURES = [
   { level: 'B', shape: 'cyl', x: 3.9, y: 6.2, r: 0.95, z0: 0, z1: 5, color: '#c9ced4', name: 'Hot water heater' },
   { level: 'B', shape: 'cyl', x: 33.2, y: 3.9, r: 0.9, z0: 0, z1: 0.1, color: '#4c5560', name: 'Sump pit' },
 
-  // Kitchen
-  { level: 'L1', x0: 28.6, y0: 0.25, x1: 35.92, y1: 2.25, z0: 0, z1: 3, color: '#e9e4da', top: '#6e737b' },
-  { level: 'L1', x0: 33.92, y0: 2.25, x1: 35.92, y1: 12.5, z0: 0, z1: 3, color: '#e9e4da', top: '#6e737b' },
-  { level: 'L1', x0: 25.9, y0: 2.25, x1: 28.6, y1: 12.2, z0: 0, z1: 3, color: '#e9e4da', top: '#6e737b' },
-  { level: 'L1', x0: 33.95, y0: 6, x1: 35.9, y1: 8.5, z0: 3, z1: 3.05, color: '#2b2f35' },
-  { level: 'L1', x0: 29.6, y0: 0.45, x1: 31.9, y1: 1.9, z0: 3, z1: 3.03, color: '#aeb6bf' },
-  { level: 'L1', x0: 32.6, y0: 13, x1: 35.6, y1: 15.2, z0: 0, z1: 6, color: '#d8dce0', name: 'Refrigerator' },
+  // Kitchen, from photos (Oct 2026): honey oak cabinets, black granite, stainless
+  // appliances. Window wall: base run with the sink under the window and the
+  // dishwasher beside it.
+  { level: 'L1', x0: 24.8, y0: 0.25, x1: 35.92, y1: 2.25, z0: 0, z1: 2.95, color: OAK, top: GRANITE },
+  { level: 'L1', x0: 27.4, y0: 2.22, x1: 29.4, y1: 2.3, z0: 0.3, z1: 2.85, color: STEEL, name: 'Dishwasher' },
+  { level: 'L1', x0: 29.65, y0: 0.6, x1: 31.85, y1: 1.85, z0: 3.08, z1: 3.12, color: '#55595e', name: 'Sink' },
+  { level: 'L1', x0: 24.8, y0: 0.25, x1: 28.6, y1: 1.35, z0: 4.5, z1: 7.5, color: OAK },
+  { level: 'L1', x0: 32.9, y0: 0.25, x1: 34.6, y1: 1.35, z0: 4.5, z1: 7.5, color: OAK },
+  { level: 'L1', x0: 24.8, y0: 0.25, x1: 28.6, y1: 0.3, z0: 3.1, z1: 4.5, color: SPLASH },
+  // Range wall: base cabinets and uppers either side of the range and hood,
+  // corner open shelves, dark backsplash; the run stops at the back-hall opening
+  { level: 'L1', x0: 33.92, y0: 2.25, x1: 35.92, y1: 5.2, z0: 0, z1: 2.95, color: OAK, top: GRANITE },
+  { level: 'L1', x0: 33.92, y0: 7.7, x1: 35.92, y1: 10.6, z0: 0, z1: 2.95, color: OAK, top: GRANITE },
+  { level: 'L1', x0: 33.85, y0: 5.2, x1: 35.92, y1: 7.7, z0: 0, z1: 3.0, color: STEEL, top: '#26282b', name: 'Range' },
+  { level: 'L1', x0: 35.85, y0: 0.25, x1: 35.92, y1: 10.6, z0: 3.1, z1: 4.5, color: SPLASH },
+  { level: 'L1', x0: 34.6, y0: 1.35, x1: 35.92, y1: 5.2, z0: 4.5, z1: 7.5, color: OAK },
+  { level: 'L1', x0: 34.6, y0: 7.7, x1: 35.92, y1: 10.6, z0: 4.5, z1: 7.5, color: OAK },
+  { level: 'L1', x0: 34.6, y0: 5.2, x1: 35.92, y1: 7.7, z0: 6.5, z1: 7.5, color: OAK },
+  { level: 'L1', x0: 34.35, y0: 5.25, x1: 35.92, y1: 7.65, z0: 6.15, z1: 6.5, color: STEEL, name: 'Range hood' },
+  { level: 'L1', x0: 34.6, y0: 0.25, x1: 35.92, y1: 1.35, z0: 4.5, z1: 7.5, color: '#b9874c' },
+  // Island: oak base with drawers toward the range, granite top overhanging the stool side
+  { level: 'L1', x0: 27.9, y0: 5.0, x1: 30.9, y1: 10.5, z0: 0, z1: 2.95, color: OAK },
+  { level: 'L1', x0: 27.3, y0: 4.9, x1: 31.0, y1: 10.6, z0: 2.95, z1: 3.1, color: GRANITE, name: 'Island' },
+  // Alcove by the back-hall opening (plan: "REF." and a counter): French-door
+  // refrigerator, then a counter with the microwave under its own uppers
+  { level: 'L1', x0: 32.75, y0: 15.25, x1: 35.85, y1: 17.7, z0: 0, z1: 5.8, color: STEEL, name: 'Refrigerator' },
+  { level: 'L1', x0: 32.75, y0: 16.3, x1: 35.85, y1: 17.7, z0: 6.0, z1: 7.6, color: OAK },
+  { level: 'L1', x0: 29.45, y0: 15.6, x1: 32.65, y1: 17.7, z0: 0, z1: 2.95, color: OAK, top: GRANITE },
+  { level: 'L1', x0: 30.25, y0: 16.3, x1: 31.85, y1: 17.6, z0: 3.1, z1: 4.0, color: '#1d1f22', name: 'Microwave' },
+  { level: 'L1', x0: 29.45, y0: 16.6, x1: 32.65, y1: 17.7, z0: 4.6, z1: 7.6, color: OAK },
+  { level: 'L1', x0: 29.45, y0: 17.62, x1: 32.65, y1: 17.7, z0: 3.1, z1: 4.6, color: SPLASH },
+  // Post at the end of the half wall between the dinette and the family room
+  { level: 'L1', x0: 16.5, y0: 9.25, x1: 16.85, y1: 9.6, z0: 0, z1: 9, color: '#d9dcd8' },
   // Fireplace
   { level: 'L1', x0: 0.25, y0: 5.8, x1: 1.4, y1: 10.2, z0: 0, z1: 4.4, color: '#9c8b7a' },
   { level: 'L1', x0: 1.38, y0: 6.9, x1: 1.45, y1: 9.1, z0: 0.4, z1: 2.9, color: '#2a2622' },
@@ -694,9 +923,13 @@ export const FIXTURES = [
   // Powder room
   { level: 'L1', x0: 36.6, y0: 3.4, x1: 38.0, y1: 5.0, z0: 0, z1: 1.3, color: '#f4f5f6' },
   { level: 'L1', x0: 36.45, y0: 6.0, x1: 38.0, y1: 7.6, z0: 0, z1: 2.8, color: '#f4f5f6' },
-  // Laundry
-  { level: 'L1', x0: 46.3, y0: 3.4, x1: 48.7, y1: 5.8, z0: 0, z1: 3, color: '#f2f3f5', name: 'Washer' },
-  { level: 'L1', x0: 46.3, y0: 5.9, x1: 48.7, y1: 8.3, z0: 0, z1: 3, color: '#f2f3f5', name: 'Dryer' },
+  // Laundry room: washer and dryer side by side in the alcove behind the pantry,
+  // fronts facing the door, under a wire shelf across the back wall (photo)
+  { level: 'L1', x0: 40.95, y0: 5.85, x1: 43.25, y1: 8.15, z0: 0, z1: 3.2, color: '#f2f3f5', name: 'Washer' },
+  { level: 'L1', x0: 40.95, y0: 3.45, x1: 43.25, y1: 5.75, z0: 0, z1: 3.2, color: '#f2f3f5', name: 'Dryer' },
+  { level: 'L1', x0: 40.92, y0: 3.25, x1: 47.33, y1: 4.25, z0: 5.0, z1: 5.08, color: '#f4f5f6' },
+  // Pantry shelving on its back wall
+  { level: 'L1', x0: 40.92, y0: 8.57, x1: 43.08, y1: 9.6, z0: 0, z1: 7, color: '#d9c7a5' },
 
   // Hall bath
   { level: 'L2', x0: 3.2, y0: 12.17, x1: 8.0, y1: 14, z0: 0, z1: 2.8, color: '#e9e4da', top: '#f4f5f6' },
@@ -739,8 +972,8 @@ export const ITEMS = [
     details: ['Under the C235 casement window', '1 1/2" drain, 2" vent; optional dishwasher'],
   },
   {
-    id: 'laundry', level: 'L1', at: [47.5, 5.8], z: 3.5, category: 'Appliances', name: 'Washer & dryer',
-    details: ['Mudroom / laundry', 'Laundry tub with 1 1/2" drain on the riser diagram'],
+    id: 'washer', level: 'L1', at: [42.1, 5.8], z: 3.8, category: 'Appliances', name: 'Washer & dryer',
+    details: ['Laundry room, side by side in the alcove behind the pantry', 'Laundry tub with 1 1/2" drain on the riser diagram'],
   },
   {
     id: 'garagedoors', level: 'L1', floor: H.garageFloor, at: [46.5, 30], z: 8, category: 'Electrical', name: 'Garage door openers',
@@ -768,8 +1001,12 @@ export const ITEMS = [
     details: ['Post cap lights on 10 rail posts', 'Riser lights on the 7 stair risers'],
   },
   {
-    id: 'deckgate', level: 'L1', floor: DECK.top, at: [8.5, deckY(2.3)], z: -1.2, category: 'Structure', name: 'Gate to under-deck space',
-    details: ['Gate in the lattice skirt on the far side, next to the house'],
+    id: 'deckgate', level: 'L1', floor: DECK.top, at: [DECK.x1 + 0.4, deckY((DECK.skirtDoor.d0 + DECK.skirtDoor.d1) / 2)], z: -1.2, category: 'Structure', name: 'Door to under-deck space',
+    details: [
+      'Lattice door in the skirt on the stair side, between the bottom of the stair and the outer corner',
+      'Black hinges on the corner side, latch on the stair side',
+      'The deck plan shows a gate on the far side; the photo shows it here',
+    ],
   },
   {
     id: 'smoke1', level: 'L1', at: [6.5, 23], z: 9, category: 'Safety', name: 'Smoke detector (1st floor)',
@@ -784,8 +1021,11 @@ export const ITEMS = [
     details: ['22" x 30" min. hatch in the upper hall ceiling', 'Attic storage over 2x10 ceiling joists, R-22 insulation'],
   },
   {
-    id: 'garageattic', level: 'L2', at: [44.6, 19.5], z: 5, category: 'Structure', name: 'Garage attic access',
-    details: ['Access panel from the master closet into storage above the garage', '24" x 36" minimum'],
+    id: 'garageattic', level: 'L2', at: [52, 13], z: 4, category: 'Structure', name: 'Garage attic space',
+    details: [
+      'The plans call for a 24" x 36" access panel from the master closet into storage above the garage',
+      'That space is now the carpeted closet extension, entered from the sleeping nook',
+    ],
   },
   {
     id: 'smoke2', level: 'L2', at: [19, 14.6], z: 8, category: 'Safety', name: 'Smoke detectors (2nd floor)',
@@ -797,8 +1037,8 @@ export const ITEMS = [
     id: 'lot', level: 'site', at: [28, 70], z: 3, category: 'Site', name: 'Lot 56.01, Block 216',
     focus: { at: [28, -3], r: 95 },
     details: [
-      `75.00' x 175.00' = 13,125 sq ft (0.30 acre)`,
-      `Front line S 81°28' E on Orchard Street; side lines N 08°32' E`,
+      `75.00' x 175.00' = 13,125 sq ft (0.3013 acre)`,
+      `Front line S 81°28'00" E on Orchard Street (formerly Orchard Avenue, 60' R.O.W.); side lines N 08°32'00" E`,
       `Point of beginning (front right corner) is 1,101.60' from Main Street (66' R.O.W.)`,
       'Borough of Metuchen tax map, sheet 75',
       `Also lot 96 and part of lot 95 on the "Map of 218 Building Plots, Property of Laura E. Jones" (1871), filed 1873 as Map No. 80, File No. 57`,
@@ -810,10 +1050,10 @@ export const ITEMS = [
     focus: { at: [28, 0], r: 90 },
     details: [
       `Required: front 25.00', rear 25.00', left side 10.00', right side 8.00'`,
-      `House to front line: 52.7' (porch face 48.6'), garage doors 48.6'`,
-      `House to left line: 9.5' (the survey draws the left setback line at 10.00')`,
-      `Garage to right line: 8.4'`,
-      `Rear yard: about 90.3' from the back of the house to the rear line`,
+      `Garage doors to front line: 48.00' (porch face 48.0', main house front about 52')`,
+      `House to left line: 9.53' (the setback line is drawn at 10.00')`,
+      `Garage to right line: 8.28' on the newer survey`,
+      `Rear yard: about 91' from the back of the house to the rear line`,
     ],
   },
   {
@@ -854,8 +1094,9 @@ export const ITEMS = [
   {
     id: 'arborvitae', level: 'site', at: [28, LOT.y0 + 3.15], z: 9, category: 'Landscape', name: 'Arborvitae screen (back)',
     focus: { at: [28, -78], r: 45 },
+    planted: '2024-04',
     details: [
-      `12 Thuja Green Giant arborvitae, planted about 2 years ago`,
+      `12 Thuja Green Giant arborvitae`,
       `Evenly spaced about 6'-3" apart, 3' in front of the back chain-link fence`,
       `Modeled at about 8' tall; Green Giants grow 3' to 5' a year, to 40' to 60' tall and 12' to 20' wide`,
     ],
@@ -863,18 +1104,21 @@ export const ITEMS = [
   {
     id: 'arborvitae-garage', level: 'site', at: [54.6, -10], z: 9, category: 'Landscape', name: 'Arborvitae row (garage side)',
     focus: { at: [52, -12], r: 25 },
-    details: [`4 Thuja Green Giant arborvitae, about 2 years old`, `Evenly spaced in a line running back about 20' behind the house, out past the garage`],
+    planted: '2024-04',
+    details: [`4 Thuja Green Giant arborvitae`, `Evenly spaced in a line running back about 20' behind the house, out past the garage`],
   },
   {
     id: 'arborvitae-chimney', level: 'site', at: [-2.8, -10.5], z: 9, category: 'Landscape', name: 'Arborvitae row (chimney side)',
     focus: { at: [0, -12], r: 25 },
-    details: [`4 Thuja Green Giant arborvitae, about 2 years old`, `Evenly spaced in a line running back about 19' behind the house, just outside its left wall`],
+    planted: '2024-04',
+    details: [`4 Thuja Green Giant arborvitae`, `Evenly spaced in a line running back about 19' behind the house, just outside its left wall`],
   },
   {
     id: 'serviceberry', level: 'site', at: [27.6, -29.1], z: 9, category: 'Landscape', name: 'Autumn Brilliance serviceberry',
     focus: { at: [20, -26], r: 25 },
+    planted: '2024-04',
     details: [
-      `Amelanchier × grandiflora 'Autumn Brilliance', planted about 2 years ago`,
+      `Amelanchier × grandiflora 'Autumn Brilliance'`,
       `About 29' behind the house, in line with the deck's stair side`,
       `White flowers in early spring, small edible berries in June, orange-red fall color`,
       `Matures at about 20' to 25' tall and 15' to 20' wide`,
@@ -883,11 +1127,51 @@ export const ITEMS = [
   {
     id: 'cherry', level: 'site', at: [8.9, -29.1], z: 7.5, category: 'Landscape', name: 'Double pink weeping cherry',
     focus: { at: [12, -26], r: 25 },
+    planted: '2024-04',
     details: [
-      'Planted about 2 years ago',
       `About 29' behind the house, in line with the deck's far end`,
       'Double pink flowers in spring on weeping branches',
     ],
+  },
+  {
+    id: 'frenchdrain', level: 'site', at: [63.2, -70], z: 1.5, category: 'Drainage', name: 'French drain',
+    focus: { at: [52, -72], r: 35 },
+    details: [
+      '4" perforated (holed) pipe, buried',
+      'Along the back lot line on the right half, then up the right side line about 37\'',
+      'Trench: 3/4" clean stone wrapped in filter fabric around the pipe, topsoil on top',
+      'Takes the water from the downspout drain lines',
+    ],
+  },
+  {
+    id: 'downspoutdrains', level: 'site', at: [-3.8, -40], z: 1.5, category: 'Drainage', name: 'Downspout drain lines',
+    focus: { at: [28, -30], r: 70 },
+    details: [
+      '4" solid pipe, buried',
+      'Downspouts at the front-left and rear-left corners of the house and the rear-right and front-right corners of the garage',
+      'Runs back along both side yards and across the back of the lot to the French drain',
+    ],
+  },
+  {
+    id: 'maple-porch', level: 'site', at: [3.6, 40.2], z: 23, category: 'Landscape', name: 'Japanese maple (by the porch)',
+    focus: { at: [6, 38], r: 30 },
+    details: [
+      'Mature multi-trunk Japanese maple in front of the left end of the porch',
+      'Identified from a photo of the house; about 20\' to 25\' tall',
+    ],
+  },
+  {
+    id: 'maple-lawn', level: 'site', at: [28.2, 49.5], z: 23, category: 'Landscape', name: 'Japanese maple (front lawn)',
+    focus: { at: [26, 45], r: 30 },
+    details: [
+      'Mature multi-trunk Japanese maple in the front lawn, left of the driveway',
+      'Identified from a photo of the house; about 20\' to 25\' tall',
+    ],
+  },
+  {
+    id: 'frontbeds', level: 'site', at: [7.3, 37.7], z: 1.5, category: 'Landscape', name: 'Front planting beds',
+    focus: { at: [18, 40], r: 25 },
+    details: ['Mulched beds with low shrubs along the porch, on each side of the front steps'],
   },
   {
     id: 'fencegate', level: 'site', at: [63.3, 6.5], z: 6.5, category: 'Site', name: 'Side yard gate',
@@ -936,13 +1220,13 @@ export const HOME = {
   address: '90 Orchard Street, Metuchen, NJ',
   style: 'Two-story colonial with attached two-car garage',
   facts: [
-    ['First floor', '1,415 sq ft'],
+    ['First floor', '1,320 sq ft'],
     ['Second floor', '1,255 sq ft (incl. open foyer)'],
-    ['Total', '2,670 sq ft'],
+    ['Total', '2,575 sq ft'],
     ['Volume', '51,968 cu ft'],
     ['Footprint', '57\'-0" x 36\'-0"'],
     ['Building height', '30\'-11" +/-'],
-    ['Bedrooms', '4'],
+    ['Bedrooms', '4, plus a first-floor study'],
     ['Baths', '2 full, 1 half'],
     ['Deck', '376 sq ft Trex (2020)'],
     ['Lot', `75' x 175' (0.30 acre)`],
@@ -981,10 +1265,11 @@ export const HOME = {
       title: 'Property (survey)',
       rows: [
         ['Lot', 'Lot 56.01, Block 216, Borough of Metuchen'],
+        ['Area', '0.3013 acre'],
         ['Size', `75.00' x 175.00' (13,125 sq ft)`],
-        ['Faces', `Orchard Street, S 08°32' W`],
+        ['Faces', `Orchard Street (60' R.O.W.), S 08°32' W`],
         ['Setbacks', `25' front and rear, 10' / 8' sides`],
-        ['House', `52.7' from the street, 9.5' and 8.4' from the sides`],
+        ['House', `Garage 48.00' from the street; 9.53' and 8.28' from the sides`],
         ['Back of lot', 'Woods, with the 100-year flood limit across the rear-left corner'],
         ['Utilities', 'Overhead electric from the pole at the front right corner'],
       ],
@@ -1005,11 +1290,19 @@ export const HOME = {
       title: 'House drawings',
       rows: [
         ['Architect', 'Roger C. Winkle, A.I.A., Plainfield, NJ'],
+        ['Areas', 'Sheet 1: 1,320 / 2,575 sq ft with the optional study (as built), 1,415 / 2,670 without'],
         ['Prepared for', 'Anda Builders, Inc.'],
         ['Date', 'Jan. 25, 2001 (5 sheets)'],
       ],
     },
   ],
+}
+
+// Per-floor facts for the floor overview panel
+export const FLOOR_FACTS = {
+  L1: { area: '1,320 sq ft (plans, with the study)', ceiling: `9'-0" (8'-0" in the garage wing)` },
+  L2: { area: '1,255 sq ft (plans, incl. the open foyer)', ceiling: `8'-0"` },
+  B: { area: 'about 1,130 sq ft, unfinished', ceiling: `8'-0" to the joists` },
 }
 
 export const BLUEPRINTS = [
@@ -1022,7 +1315,8 @@ export const BLUEPRINTS = [
   { id: 'd2', set: 'Deck 2020', file: 'deck-a2-structural.jpg', title: 'Deck framing plan', sheet: 'A-2' },
   { id: 'd3', set: 'Deck 2020', file: 'deck-a3-plan.jpg', title: 'Deck plan & lighting', sheet: 'A-3' },
   { id: 'd4', set: 'Deck 2020', file: 'deck-a4-details.jpg', title: 'Deck details', sheet: 'A-4' },
-  { id: 'p1', set: 'Survey', file: 'property-survey.jpg', title: 'Property survey', sheet: '1 of 1' },
+  { id: 'p2', set: 'Survey', file: 'drainage-plan.jpg', title: 'Newer survey, with the drainage markup', sheet: 'photo' },
+  { id: 'p1', set: 'Survey', file: 'property-survey.jpg', title: 'Older survey (woods, flood limit)', sheet: '1 of 1' },
 ]
 
 // ---------------------------------------------------------------- helpers
@@ -1065,6 +1359,18 @@ export function pointInPoly([x, y], poly) {
 
 export function roomFloor(room) {
   return room.floor ?? levelById[room.level].floor
+}
+
+// "2024-04" -> { label: 'April 2024', age: '2 years, 6 months' } as of `now`.
+export function plantedInfo(planted, now = new Date()) {
+  const [y, m] = planted.split('-').map(Number)
+  const label = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const months = Math.max(0, (now.getFullYear() - y) * 12 + (now.getMonth() + 1 - m))
+  const yrs = Math.floor(months / 12)
+  const mos = months % 12
+  const part = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'}`
+  const age = [yrs && part(yrs, 'year'), (mos || !yrs) && part(mos, 'month')].filter(Boolean).join(', ')
+  return { label, age }
 }
 
 export function roomLabelPoint(room) {
