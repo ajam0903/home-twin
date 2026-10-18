@@ -2,3 +2,9 @@ node_modules
 dist
 # Camera RAW originals are large; the converted sheets live in public/blueprints
 blueprints/*.ARW
+
+# Maya export intermediates (rebuilt from the app with ?export=maya)
+maya/export/
+# The Maya scene is the editing source but stays local (large binary);
+# rebuild it with ?export=maya and npm run maya:build
+maya/house.mb

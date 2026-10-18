@@ -1,9 +1,14 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { buildHouse } from './buildHouse.js'
 import { buildFurniturePiece } from './furniture.js'
 import { moveFurniture } from '../model/furniture.js'
+import { loadMayaModel, appMaterial, fixVertexColors } from './mayaModel.js'
 import {
   ROOMS, ITEMS, SITE, levelById, roomById, itemById, roomFloor, roomLabelPoint, polyArea, gradeAt,
 } from '../model/house.js'
@@ -69,26 +74,56 @@ export class Viewer {
     const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 1000)
     this.camera = camera
 
-    scene.add(new THREE.HemisphereLight('#f4f7ff', '#8a8370', 1.35))
-    const sun = new THREE.DirectionalLight('#fff6e8', 2.1)
-    sun.position.set(-30, 110, 55)
+    // Phones and small screens skip the ambient occlusion pass and use a
+    // smaller shadow map; everything else looks the same.
+    const highQuality = window.matchMedia('(pointer: fine)').matches && Math.min(screen.width, screen.height) >= 700
+    this.highQuality = highQuality
+
+    // Sky and ground bounce. (An environment map was tried: its glancing
+    // reflections washed the lawn out to a pale mint.)
+    scene.add(new THREE.HemisphereLight('#eaf1ff', '#7d7462', 1.1))
+    // Late-morning sun from the front left (the camera's usual side), warm
+    const sun = new THREE.DirectionalLight('#fff1dc', 2.5)
+    sun.position.set(-38, 100, 70)
     sun.target.position.copy(CENTER)
     sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.mapSize.set(highQuality ? 4096 : 2048, highQuality ? 4096 : 2048)
     const sc = sun.shadow.camera
-    sc.left = -55
-    sc.right = 55
-    sc.top = 55
-    sc.bottom = -55
-    sc.near = 10
-    sc.far = 220
-    sun.shadow.bias = -0.0005
-    sun.shadow.normalBias = 0.04
+    sc.left = -52
+    sc.right = 52
+    sc.top = 52
+    sc.bottom = -52
+    sc.near = 20
+    sc.far = 230
+    sun.shadow.bias = -0.0004
+    sun.shadow.normalBias = 0.03
     scene.add(sun, sun.target)
+    // Cool fill from the opposite side so shaded faces keep their detail
+    const fill = new THREE.DirectionalLight('#dce6ff', 0.45)
+    fill.position.set(60, 50, -70)
+    fill.target.position.copy(CENTER)
+    scene.add(fill, fill.target)
 
-    const house = buildHouse()
+    const house = buildHouse({ lowDetail: !highQuality })
     this.house = house
     scene.add(house.root)
+
+    // Ambient occlusion: darkens corners, eaves, the ground under the deck and
+    // where furniture meets the floor. Its normal pass honors the cutaway.
+    if (highQuality) {
+      const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
+      const composer = new EffectComposer(renderer, target)
+      composer.addPass(new RenderPass(scene, camera))
+      const ao = new GTAOPass(scene, camera, 1, 1)
+      ao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.4, thickness: 1.5, scale: 1.25, samples: 16 })
+      ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 })
+      ao.blendIntensity = 0.85
+      ao.normalMaterial.side = THREE.DoubleSide
+      composer.addPass(ao)
+      composer.addPass(new OutputPass())
+      this.composer = composer
+      this.aoPass = ao
+    }
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
@@ -104,6 +139,15 @@ export class Viewer {
     this.buildLabels()
     this.attachPicking()
 
+    // The Maya model, when there is one, replaces the house built from the plans
+    // (open the app with ?model=plans to see the generated house instead)
+    const usePlans = new URLSearchParams(window.location.search).get('model') === 'plans'
+    ;(usePlans ? Promise.resolve(null) : loadMayaModel())
+      .then((model) => {
+        if (model && !this.disposed) this.useMayaModel(model)
+      })
+      .catch((err) => console.warn('Maya model not loaded:', err))
+
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(container)
     this.resize()
@@ -115,7 +159,8 @@ export class Viewer {
       this.stepTween(now)
       const moved = controls.update()
       if (moved || this.dirty || this.tween) {
-        renderer.render(scene, camera)
+        if (this.composer) this.composer.render()
+        else renderer.render(scene, camera)
         labels.render(scene, camera)
         this.updateCompass()
         this.dirty = false
@@ -223,6 +268,12 @@ export class Viewer {
     if (this.mode !== 'exterior' && this.cut) {
       clipPlanes[this.mode].constant = levelById[this.mode].floor + CUT_HEIGHT
     }
+    // The AO normal pass draws everything with one material: give it the same
+    // cut, or walls above the cut would still darken the rooms
+    if (this.aoPass) {
+      this.aoPass.normalMaterial.clippingPlanes = this.mode === 'exterior' ? [] : [clipPlanes[this.mode]]
+      this.aoPass.normalMaterial.needsUpdate = true
+    }
     const showPins = this.showPins !== false
     for (const l of this.roomLabels) {
       l.visible = l.userData.level === this.mode
@@ -253,6 +304,84 @@ export class Viewer {
     this.applyMode()
     // Furniture is being edited in place: keep the camera still
     if (selection && fly && selection.kind !== 'furniture') this.frameSelection()
+  }
+
+  // ------------------------------------------------------------ Maya model
+
+  // Swap the generated geometry for the FBX from Maya. Its top groups match the
+  // app's: B, L1, L2 (cut away floor by floor), roof, site, utilities, trees.
+  // The forest on the neighboring lots stays generated.
+  useMayaModel({ fbx, extras }) {
+    const h = this.house
+    const targets = {
+      B: [h.levelGroups.B, 'B'],
+      L1: [h.levelGroups.L1, 'L1'],
+      L2: [h.levelGroups.L2, 'L2'],
+      roof: [h.roofGroup, null],
+      site: [h.siteGroup, null],
+      utilities: [h.utilitiesGroup, null],
+      trees: [h.woodsGroup, null],
+    }
+    const found = Object.keys(targets).filter((name) => fbx.getObjectByName(name))
+    if (!found.includes('L1')) {
+      console.warn('Maya model has no L1 group; keeping the house from the plans')
+      return
+    }
+    for (const name of found) {
+      const [group] = targets[name]
+      // the woods group keeps its generated forest (unnamed parts)
+      const old = group.children.filter((o) => name !== 'trees' || o.userData.part)
+      for (const o of old) {
+        group.remove(o)
+        o.traverse((c) => c.geometry?.dispose())
+      }
+    }
+    const highlightMat = new THREE.MeshBasicMaterial({ color: 0xff8a1f, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide })
+    const mats = new Map()
+    const material = (m, level) => {
+      const key = m.uuid + (level ?? '')
+      if (!mats.has(key)) mats.set(key, appMaterial(m, extras, level ? h.clipPlanes[level] : null))
+      return mats.get(key)
+    }
+    const roomMeshes = []
+    fbx.updateMatrixWorld(true)
+    for (const name of found) {
+      const [group, level] = targets[name]
+      const node = fbx.getObjectByName(name)
+      for (const child of [...node.children]) {
+        child.traverse((o) => {
+          if (!o.isMesh) return
+          fixVertexColors(o.geometry)
+          o.material = Array.isArray(o.material) ? o.material.map((m) => material(m, level)) : material(o.material, level)
+          o.castShadow = !(Array.isArray(o.material) ? o.material : [o.material]).every((m) => m.transparent && m.opacity < 0.6)
+          o.receiveShadow = true
+          if (level && o.name.startsWith('room_')) {
+            // room_<id>, or room_<id>1 after Maya renames a copy
+            const raw = o.name.slice(5)
+            const id = roomById[raw] ? raw : roomById[raw.replace(/\d+$/, '')] ? raw.replace(/\d+$/, '') : null
+            if (!id) return
+            o.userData = { kind: 'room', id }
+            roomMeshes.push({ id, level, floor: o })
+          }
+        })
+        // keep the world placement Maya gave it
+        child.matrixWorld.decompose(child.position, child.quaternion, child.scale)
+        group.add(child)
+      }
+    }
+    // selection highlights, added after the material swap so they stay unlit
+    for (const r of roomMeshes) {
+      const hl = new THREE.Mesh(r.floor.geometry, highlightMat)
+      hl.position.y = 0.04
+      hl.visible = false
+      hl.renderOrder = 2
+      r.floor.add(hl)
+      r.highlight = hl
+    }
+    if (roomMeshes.length) h.roomMeshes = roomMeshes
+    this.usingMaya = true
+    this.setFurniture(this.furniture, this.showFurniture)
+    this.applyMode()
   }
 
   // ------------------------------------------------------------ furniture
@@ -506,14 +635,21 @@ export class Viewer {
     else this.camera.clearViewOffset()
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(w, h)
+    if (this.composer) {
+      this.composer.setPixelRatio(this.renderer.getPixelRatio())
+      this.composer.setSize(w, h)
+    }
     this.labelRenderer.setSize(w, h)
     this.dirty = true
   }
 
   dispose() {
+    this.disposed = true
     cancelAnimationFrame(this.raf)
     this.resizeObserver.disconnect()
     this.controls.dispose()
+    this.composer?.dispose()
+    this.aoPass?.dispose()
     this.renderer.dispose()
     this.scene.traverse((o) => {
       if (o.geometry) o.geometry.dispose()

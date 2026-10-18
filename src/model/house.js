@@ -104,7 +104,7 @@ export const SITE = {
   // Between the garage's right wall and the right line: a fixed white vinyl
   // panel, then a single gate hinged on its left (garage) side.
   gate: { a: [57.25, 6.5], b: [LOT.x1 - 0.15, 6.5], hingeX: 61.3, height: 6 },
-  // Plantings, all put in April 2024 (owner, 2026-10-17). Sizes are estimates.
+  // Plantings, all put in April 2025 (owner, corrected 2026-10-18). Sizes are estimates.
   plants: [
     // 12 Thuja Green Giant arborvitae, evenly spaced 3' in front of the back fence
     ...plantRow('thuja', [LOT.x0, LOT.y0 + 3.15], [LOT.x1, LOT.y0 + 3.15], 12),
@@ -1094,7 +1094,7 @@ export const ITEMS = [
   {
     id: 'arborvitae', level: 'site', at: [28, LOT.y0 + 3.15], z: 9, category: 'Landscape', name: 'Arborvitae screen (back)',
     focus: { at: [28, -78], r: 45 },
-    planted: '2024-04',
+    planted: '2025-04',
     details: [
       `12 Thuja Green Giant arborvitae`,
       `Evenly spaced about 6'-3" apart, 3' in front of the back chain-link fence`,
@@ -1104,19 +1104,19 @@ export const ITEMS = [
   {
     id: 'arborvitae-garage', level: 'site', at: [54.6, -10], z: 9, category: 'Landscape', name: 'Arborvitae row (garage side)',
     focus: { at: [52, -12], r: 25 },
-    planted: '2024-04',
+    planted: '2025-04',
     details: [`4 Thuja Green Giant arborvitae`, `Evenly spaced in a line running back about 20' behind the house, out past the garage`],
   },
   {
     id: 'arborvitae-chimney', level: 'site', at: [-2.8, -10.5], z: 9, category: 'Landscape', name: 'Arborvitae row (chimney side)',
     focus: { at: [0, -12], r: 25 },
-    planted: '2024-04',
+    planted: '2025-04',
     details: [`4 Thuja Green Giant arborvitae`, `Evenly spaced in a line running back about 19' behind the house, just outside its left wall`],
   },
   {
     id: 'serviceberry', level: 'site', at: [27.6, -29.1], z: 9, category: 'Landscape', name: 'Autumn Brilliance serviceberry',
     focus: { at: [20, -26], r: 25 },
-    planted: '2024-04',
+    planted: '2025-04',
     details: [
       `Amelanchier × grandiflora 'Autumn Brilliance'`,
       `About 29' behind the house, in line with the deck's stair side`,
@@ -1127,7 +1127,7 @@ export const ITEMS = [
   {
     id: 'cherry', level: 'site', at: [8.9, -29.1], z: 7.5, category: 'Landscape', name: 'Double pink weeping cherry',
     focus: { at: [12, -26], r: 25 },
-    planted: '2024-04',
+    planted: '2025-04',
     details: [
       `About 29' behind the house, in line with the deck's far end`,
       'Double pink flowers in spring on weeping branches',
@@ -1361,7 +1361,7 @@ export function roomFloor(room) {
   return room.floor ?? levelById[room.level].floor
 }
 
-// "2024-04" -> { label: 'April 2024', age: '2 years, 6 months' } as of `now`.
+// "2025-04" -> { label: 'April 2025', age: '1 year, 6 months' } as of `now`.
 export function plantedInfo(planted, now = new Date()) {
   const [y, m] = planted.split('-').map(Number)
   const label = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })

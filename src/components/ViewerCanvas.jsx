@@ -1,6 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Viewer } from '../three/Viewer.js'
 
+let exportStarted = false
+
 // Thin React wrapper around the imperative three.js viewer.
 const ViewerCanvas = forwardRef(function ViewerCanvas(
   { level, cut, pins, selection, onSelect, insetTop = 0, insetBottom = 0, furniture, showFurniture, onFurnitureMove },
@@ -20,6 +22,21 @@ const ViewerCanvas = forwardRef(function ViewerCanvas(
     })
     viewer.current = v
     if (import.meta.env.DEV) window.__homeViewer = v // for camera checks in dev
+    // Dev only: open the app with ?export=maya to write maya/export for Maya
+    if (import.meta.env.DEV && !exportStarted && new URLSearchParams(window.location.search).get('export') === 'maya') {
+      exportStarted = true // React mounts twice in dev; export once
+      const note = document.createElement('div')
+      note.className = 'export-status'
+      document.body.appendChild(note)
+      const say = (text) => {
+        note.textContent = text
+        console.info('[maya export]', text)
+      }
+      import('../three/mayaExport.js')
+        .then(({ exportForMaya }) => exportForMaya({ onStatus: say }))
+        .then((summary) => console.info('[maya export] done', summary))
+        .catch((err) => say(`Export failed: ${err.message}`))
+    }
     return () => v.dispose()
   }, [])
 

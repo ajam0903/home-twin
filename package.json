@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "maya:build": "node tools/maya/run.mjs build",
+    "maya:export": "node tools/maya/run.mjs export"
   },
   "dependencies": {
     "react": "^18.3.1",

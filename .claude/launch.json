@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "home-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5180
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js"],
+      "port": 5180,
+      "autoPort": true
     }
   ]
 }

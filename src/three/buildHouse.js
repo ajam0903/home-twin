@@ -1,7 +1,80 @@
 import * as THREE from 'three'
 import {
   H, LEVELS, levelById, ROOMS, WALLS, FIXTURES, DECK, SITE, PLANT_TYPES, BAY, STAIR, openingPoint, roomFloor, gradeAt, deckY,
+  pointInPoly,
 } from '../model/house.js'
+import { shingleTextures, sidingTextures, grassTexture, asphaltTexture, concreteTexture, applyWorldUV } from './textures.js'
+import { buildForest, forestFloor, clump, limb, thujaGeometry, foliageMaterial, seeded, setVegetationDetail } from './vegetation.js'
+
+// Every mesh added to `group` since child index `mark` belongs to one named
+// part (a wall, a window, a cabinet, a plant...). The Maya export uses these
+// names and groups. Inner parts win (a window inside its wall).
+function tagSince(group, mark, part) {
+  for (let i = mark; i < group.children.length; i++) group.children[i].userData.part ??= part
+}
+function tagged(group, part, build) {
+  const mark = group.children.length
+  const out = build()
+  tagSince(group, mark, part)
+  return out
+}
+// Turn a flat surface's triangles to face up. The app draws both sides, but
+// Maya (and the FBX) use the winding: floors and ground must face the sky.
+function faceUp(geo) {
+  const pos = geo.attributes.position
+  if (!geo.index) geo.setIndex(Array.from({ length: pos.count }, (_, i) => i))
+  const idx = geo.index.array
+  const a = new THREE.Vector3()
+  const b = new THREE.Vector3()
+  const c = new THREE.Vector3()
+  for (let i = 0; i + 2 < idx.length; i += 3) {
+    a.fromBufferAttribute(pos, idx[i])
+    b.fromBufferAttribute(pos, idx[i + 1])
+    c.fromBufferAttribute(pos, idx[i + 2])
+    const ny = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z)
+    if (ny < 0) [idx[i + 1], idx[i + 2]] = [idx[i + 2], idx[i + 1]]
+  }
+  geo.index.needsUpdate = true
+  geo.computeVertexNormals()
+  return geo
+}
+
+// Maya-safe names: letters, digits and underscores
+const safeName = (s) => String(s).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+// Snapshot of every group's child count, then name what a build step added
+const snap = (groups) => groups.map((g) => [g, g.children.length])
+const nameSince = (snapshot, name, kind = 'part') => {
+  for (const [g, n] of snapshot) tagSince(g, n, { kind, name })
+}
+const counters = new Map()
+const nextName = (prefix) => {
+  const n = (counters.get(prefix) ?? 0) + 1
+  counters.set(prefix, n)
+  return `${prefix}_${String(n).padStart(2, '0')}`
+}
+
+// Exterior textures are drawn once and shared by every viewer
+let exteriorTextures = null
+function exterior() {
+  if (!exteriorTextures) {
+    exteriorTextures = {
+      shingles: shingleTextures(8),
+      siding: sidingTextures(8),
+      grass: grassTexture(8),
+      asphalt: asphaltTexture(8),
+      concrete: concreteTexture(8),
+    }
+    // file names in the Maya export
+    for (const [name, t] of Object.entries(exteriorTextures)) {
+      if (t.isTexture) t.name = name
+      else {
+        t.map.name = name
+        t.bumpMap.name = `${name}_bump`
+      }
+    }
+  }
+  return exteriorTextures
+}
 
 // Plan (x, y) maps to three.js (X, Z); height is Y. 1 unit = 1 foot.
 
@@ -12,8 +85,7 @@ const COLORS = {
   interior: '#f6f4ef',
   trim: '#ffffff',
   foundation: '#a8a49c',
-  roof: '#4b515a',
-  roofEdge: '#3c4148',
+  roofEdge: '#4d4744', // ridge caps, same weathered shingles
   glass: '#9fc3dd',
   frontDoor: '#2f4a68',
   door: '#f2efe8',
@@ -22,10 +94,6 @@ const COLORS = {
   step: '#b9b2a6',
   stair: '#b98f62',
   rail: '#fbfaf7',
-  chimney: '#9b6f5a',
-  ground: '#93b47c',
-  drive: '#9a9893',
-  walk: '#c2bcb0',
   select: '#ff8a1f',
 }
 
@@ -43,7 +111,10 @@ const FLOOR_COLORS = {
   deck: '#8d6e57',
 }
 
-export function buildHouse() {
+// lowDetail: coarser trees and shrubs (phones)
+export function buildHouse({ lowDetail = false } = {}) {
+  setVegetationDetail(lowDetail ? 'low' : 'high')
+  counters.clear()
   const root = new THREE.Group()
   const levelGroups = {}
   const clipPlanes = {}
@@ -87,17 +158,40 @@ export function buildHouse() {
   const siteGroup = new THREE.Group()
   siteGroup.name = 'site'
   root.add(siteGroup)
+  // Buried drain lines, shown with the Systems toggle
+  const utilitiesGroup = new THREE.Group()
+  utilitiesGroup.name = 'utilities'
+  root.add(utilitiesGroup)
 
   const plain = (color, opts = {}) =>
     new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.9, side: THREE.DoubleSide })
-  const roofMat = plain(COLORS.roof, { roughness: 0.95 })
+  const tex = exterior()
+  // Charcoal architectural shingles (the texture carries the color)
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: '#ffffff', ...tex.shingles, bumpScale: 2.2, roughness: 0.93, side: THREE.DoubleSide,
+  })
   const roofEdgeMat = plain(COLORS.roofEdge)
-  const sidingMat = plain(COLORS.siding)
   const trimMat = plain(COLORS.trim)
+  // Vinyl lap siding: one material for the gables, one per level for the
+  // walls so a level can still be cut away
+  const sidingOpts = { color: COLORS.siding, ...tex.siding, bumpScale: 1.4, roughness: 0.6, side: THREE.DoubleSide }
+  const sidingMat = new THREE.MeshStandardMaterial(sidingOpts)
+  const sidingMats = {}
+  const siding = (level) =>
+    (sidingMats[level] ??= new THREE.MeshStandardMaterial({ ...sidingOpts, clippingPlanes: [clipPlanes[level]], clipShadows: true }))
+
+  const allGroups = () => [...Object.values(levelGroups), roofGroup, siteGroup, utilitiesGroup]
+  let mark = snap(allGroups())
 
   // ------------------------------------------------------------ walls
   const ends = wallEnds(WALLS)
-  for (const wall of WALLS) addWall(levelGroups[wall.level], wall, mat, ends.get(wall))
+  for (const wall of WALLS) {
+    const g = levelGroups[wall.level]
+    const kind = wall.kind === 'rail' ? 'railing' : wall.kind === 'knee' ? 'halfwall' : wall.kind === 'foundation' ? 'foundation' : wall.ext ? 'extwall' : 'wall'
+    const name = nextName(`${wall.level}_${kind}`)
+    tagged(g, { kind: 'wall', name }, () => addWall(g, wall, mat, ends.get(wall), siding, name))
+  }
+  addCornerBoards(levelGroups, mat)
 
   // ------------------------------------------------------------ floors
   const roomMeshes = []
@@ -109,6 +203,7 @@ export function buildHouse() {
     const shape = new THREE.Shape(room.poly.map(([x, y]) => new THREE.Vector2(x, y)))
     const geo = new THREE.ShapeGeometry(shape)
     geo.rotateX(Math.PI / 2) // (x, y, 0) -> (x, 0, y)
+    faceUp(geo)
     const y = roomFloor(room)
     const floorMat =
       room.type === 'deck'
@@ -120,12 +215,13 @@ export function buildHouse() {
     floor.position.y = y
     floor.receiveShadow = true
     floor.castShadow = room.type === 'deck' // shade the ground under the deck
-    floor.userData = { kind: 'room', id: room.id }
+    floor.userData = { kind: 'room', id: room.id, part: { kind: 'room', name: `room_${safeName(room.id)}` } }
     levelGroups[room.level].add(floor)
 
     const hl = new THREE.Mesh(geo, highlightMat)
     hl.position.y = y + 0.04
     hl.visible = false
+    hl.userData.appOnly = true
     hl.renderOrder = 2
     levelGroups[room.level].add(hl)
     roomMeshes.push({ id: room.id, level: room.level, floor, highlight: hl })
@@ -146,11 +242,13 @@ export function buildHouse() {
   addBox(levelGroups.L1, 0, 0, HOUSE_W, 32, H.ff1 - 0.9, H.ff1 - 0.02, mat('L1', '#d9d4ca'), { holes: [lowerHole] })
   addBox(levelGroups.L1, 36.17, 3, 57, 14, H.garageFloor, H.ff1 - 0.02, mat('L1', '#d9d4ca')) // raised floor under the study wing
   addBox(levelGroups.L1, 36.17, 14, 57, 36, H.garageFloor - 0.3, H.garageFloor - 0.01, mat('L1', '#b0aca4'))
+  nameSince(mark, 'floor_structure')
 
   // ------------------------------------------------------------ fixtures
   for (const f of FIXTURES) {
     const base = levelById[f.level].floor
     const g = levelGroups[f.level]
+    const mark = g.children.length
     const m = mat(f.level, f.color, f.glass ? { opacity: 0.35, roughness: 0.1 } : { roughness: 0.6 })
     if (f.shape === 'cyl') {
       const geo = new THREE.CylinderGeometry(f.r, f.r, f.z1 - f.z0, 24)
@@ -163,74 +261,131 @@ export function buildHouse() {
       mesh.castShadow = !f.glass
       if (f.top) addBox(g, f.x0 - 0.05, f.y0 - 0.05, f.x1 + 0.05, f.y1 + 0.05, base + f.z1, base + f.z1 + 0.12, mat(f.level, f.top, { roughness: 0.4 }))
     }
+    tagSince(g, mark, { kind: 'fixture', name: nextName(`${f.level}_${safeName(f.name ?? 'cabinet')}`) })
   }
 
   // ------------------------------------------------------------ stairs
+  mark = snap(allGroups())
   buildMainStairs(levelGroups, mat)
   // Steps from the back hall door down into the garage
   addStair(levelGroups.L1, { x0: 36.6, x1: 39.6, yLow: 16.6, yHigh: 14.17, zLow: H.garageFloor, zHigh: H.ff1, risers: 3 }, mat('L1', COLORS.step))
+  nameSince(mark, 'stairs')
 
   // ------------------------------------------------------------ porch & stoops
   const L1 = levelGroups.L1
+  mark = snap(allGroups())
   buildPorch(L1, roofGroup, mat, plain)
+  nameSince(mark, 'front_porch')
+  mark = snap(allGroups())
   // Bay underside skirt
-  addBox(L1, 18.3, -1.62, 24.3, 0, H.ff1 - 0.7, H.ff1 - 0.02, mat('L1', COLORS.siding))
+  addBox(L1, 18.3, -1.62, 24.3, 0, H.ff1 - 0.7, H.ff1 - 0.02, siding('L1')).userData.uv = 'wall'
+  nameSince(mark, 'bay_skirt')
 
   // ------------------------------------------------------------ deck (2020)
+  mark = snap(allGroups())
   buildDeck(L1, mat)
+  nameSince(mark, 'deck')
+  mark = snap(allGroups())
 
   // ------------------------------------------------------------ roofs
   // Main roof: side gable, ridge along x, 9/12.
-  gableRoof(roofGroup, { x0: 0, x1: 36.17, z0: 0, z1: 32, axis: 'x', base: H.ceil2, pitch: 0.75, eave: 1, rake: 0.8 }, roofMat, roofEdgeMat)
+  gableRoof(roofGroup, { x0: 0, x1: 36.17, z0: 0, z1: 32, axis: 'x', base: H.ceil2, pitch: 0.75, eave: 1, rake: 0.8 }, roofMat, roofEdgeMat, trimMat)
   gableEnd(roofGroup, { plane: 'x', at: 0, from: 0, to: 32, base: H.ceil2, pitch: 0.75 }, sidingMat)
   gableEnd(roofGroup, { plane: 'x', at: 36.17, from: 0, to: 32, base: H.ceil2, pitch: 0.75 }, sidingMat)
+  nameSince(mark, 'main_roof')
+  mark = snap(allGroups())
   // Decorative front gable over the center window
-  gableRoof(roofGroup, { x0: 13.6, x1: 22.6, z0: 24.5, z1: 32, axis: 'z', base: H.ceil2, pitch: 1, eave: 0.6, rake: 0.6, noBackRake: true }, roofMat, roofEdgeMat)
+  gableRoof(roofGroup, { x0: 13.6, x1: 22.6, z0: 24.5, z1: 32, axis: 'z', base: H.ceil2, pitch: 1, eave: 0.6, rake: 0.6, noBackRake: true }, roofMat, roofEdgeMat, trimMat)
   gableEnd(roofGroup, { plane: 'z', at: 32, from: 13.6, to: 22.6, base: H.ceil2, pitch: 1 }, plain('#f3f1ec')) // white scallop shingles
   const fan = new THREE.Mesh(new THREE.CircleGeometry(1.4, 24, 0, Math.PI), trimMat)
   fan.position.set(18.1, H.ceil2 + 0.6, 32.3)
   roofGroup.add(fan)
+  nameSince(mark, 'front_gable')
+  mark = snap(allGroups())
 
   // Porch shed roof
   shedRoof(roofGroup, { x0: -0.4, x1: 36.1, zWall: 32, zEave: 36.6, yWall: 13.5, yEave: 10.35 }, roofMat)
+  addBox(roofGroup, -0.4, 36.55, 36.1, 36.65, 9.8, 10.5, trimMat, { shadow: true }) // fascia
+  addBox(roofGroup, -0.4, 36.65, 36.1, 37.0, 9.85, 10.25, trimMat, { shadow: true }) // gutter
   addBox(roofGroup, -0.1, 35.5, 35.95, 36.0, 9.9, 10.5, trimMat)
+  nameSince(mark, 'porch_roof')
+  mark = snap(allGroups())
 
   // Bay roof: hipped, with white fascia and soffit (as in the photo)
   bayRoof(roofGroup, roofMat, roofEdgeMat, trimMat)
+  nameSince(mark, 'bay_roof')
+  mark = snap(allGroups())
 
   // Garage: side gable (ridge along x) plus a full-width front gable, 11/12.
-  gableRoof(roofGroup, { x0: 36.17, x1: 57, z0: 3, z1: 36, axis: 'x', base: H.garagePlate, pitch: 0.75, eave: 1, rake: 0.8, noStartRake: true }, roofMat, roofEdgeMat)
+  gableRoof(roofGroup, { x0: 36.17, x1: 57, z0: 3, z1: 36, axis: 'x', base: H.garagePlate, pitch: 0.75, eave: 1, rake: 0.8, noStartRake: true }, roofMat, roofEdgeMat, trimMat)
   gableEnd(roofGroup, { plane: 'x', at: 57, from: 3, to: 36, base: H.garagePlate, pitch: 0.75 }, sidingMat)
   // No side eaves: the right wall's siding runs straight up into the side gable (photo).
-  gableRoof(roofGroup, { x0: 36.17, x1: 57, z0: 19.5, z1: 36, axis: 'z', base: H.garagePlate, pitch: 11 / 12, eave: 0, rake: 0.8, noBackRake: true }, roofMat, roofEdgeMat)
+  gableRoof(roofGroup, { x0: 36.17, x1: 57, z0: 19.5, z1: 36, axis: 'z', base: H.garagePlate, pitch: 11 / 12, eave: 0, rake: 0.8, noBackRake: true }, roofMat, roofEdgeMat, trimMat)
   gableEnd(roofGroup, { plane: 'z', at: 36, from: 36.17, to: 57, base: H.garagePlate, pitch: 11 / 12 }, sidingMat)
   const vent = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.05, 32), trimMat)
   vent.position.set(46.58, 16.2, 36.32)
   roofGroup.add(vent)
-  const ventGlass = new THREE.Mesh(new THREE.CircleGeometry(0.75, 32), plain('#59636e'))
-  ventGlass.position.set(46.58, 16.2, 36.3)
-  roofGroup.add(ventGlass)
+  const ventBack = new THREE.Mesh(new THREE.CircleGeometry(0.75, 32), plain('#3b3d40'))
+  ventBack.position.set(46.58, 16.2, 36.3)
+  roofGroup.add(ventBack)
+  for (let i = -2; i <= 2; i++) {
+    const dy = i * 0.27
+    const half = Math.sqrt(0.75 ** 2 - dy ** 2)
+    addBox(roofGroup, 46.58 - half, 36.3, 46.58 + half, 36.4, 16.2 + dy - 0.06, 16.2 + dy + 0.06, trimMat)
+  }
 
 
+  nameSince(mark, 'garage_roof')
+  mark = snap(allGroups())
   // Chimney on the left wall, 2'-0" above the ridge. The property survey marks
   // "CHIM." on the garage's right wall instead; the owner confirmed (2026-10-17)
   // it is on the left wall by the family room fireplace, as the 2001 plans show.
-  const chimMat = plain(COLORS.chimney)
-  addBox(roofGroup, -2.2, 5.5, 0, 10.5, -0.3, 34.5, chimMat, { shadow: true })
-  addBox(roofGroup, -2.4, 5.3, 0.2, 10.7, 34.5, 35.1, plain('#7c5949'))
+  // It is a framed chase in the same beige siding (aerial photo): white
+  // corner boards, a white chase cover and a stainless flue pipe with a cap.
+  addBox(roofGroup, -2.2, 5.5, 0, 10.5, -0.3, 34.5, sidingMat, { shadow: true })
+  const chaseTop = 34.5
+  for (const y of [5.5, 10.5]) {
+    const dy = y < 8 ? -1 : 1
+    addBox(roofGroup, -2.28, y, -1.85, y + dy * 0.08, -0.3, chaseTop, trimMat) // outer corners
+    addBox(roofGroup, -2.28, y - dy * 0.35, -2.2, y + dy * 0.08, -0.3, chaseTop, trimMat)
+    addBox(roofGroup, -0.35, y, 0.05, y + dy * 0.08, 27, chaseTop, trimMat) // above the roof
+  }
+  addBox(roofGroup, -2.35, 5.35, 0.15, 10.65, chaseTop, chaseTop + 0.25, trimMat, { shadow: true }) // chase cover
+  const steel = new THREE.MeshStandardMaterial({ color: '#b8bcc0', metalness: 0.6, roughness: 0.35 })
+  const flue = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 1.4, 20), steel)
+  flue.position.set(-1.1, chaseTop + 0.95, 8)
+  const flueCap = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.55, 0.35, 20), steel)
+  flueCap.position.set(-1.1, chaseTop + 1.95, 8)
+  const flueRing = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.45, 20), steel)
+  flueRing.position.set(-1.1, chaseTop + 1.6, 8)
+  for (const part of [flue, flueRing, flueCap]) {
+    part.castShadow = true
+    roofGroup.add(part)
+  }
+  nameSince(mark, 'chimney')
 
   // ------------------------------------------------------------ site
   const woodsGroup = new THREE.Group()
   woodsGroup.name = 'woods'
   root.add(woodsGroup)
   buildSite(siteGroup, woodsGroup, plain)
+  mark = snap(allGroups())
   // Buried drain lines, shown with the Systems toggle; downspouts on the house
-  const utilitiesGroup = new THREE.Group()
-  utilitiesGroup.name = 'utilities'
-  root.add(utilitiesGroup)
   buildDrainage(utilitiesGroup, roofGroup, plain)
+  nameSince(mark, 'drainage')
+  mark = snap(allGroups())
   // Excavation walls visible in the basement cutaway
   addBox(siteGroup, -0.55, -0.55, 36.72, -0.5, H.basementFloor, -0.12, plain('#7a6a58'))
+  nameSince(mark, 'excavation')
+
+  // World-space UVs (feet) for the textured exterior, so shingle courses and
+  // siding laps line up across separate pieces
+  root.updateMatrixWorld(true)
+  root.traverse((o) => {
+    if (!o.isMesh) return
+    if (o.material === roofMat) applyWorldUV(o, 'roof')
+    else if (o.material === sidingMat || o.userData.uv) applyWorldUV(o, 'wall')
+  })
 
   return { root, levelGroups, roofGroup, siteGroup, woodsGroup, utilitiesGroup, roomMeshes, clipPlanes }
 }
@@ -241,21 +396,31 @@ const FAR = 450
 
 function buildSite(group, woods, plain) {
   const { lot, setbacks: sb, curbY, roadWidth } = SITE
-  const groundMat = plain(COLORS.ground, { roughness: 1 })
+  const tex = exterior()
+  const groundMat = new THREE.MeshStandardMaterial({ map: tex.grass, roughness: 1, side: THREE.DoubleSide })
+  const asphalt = new THREE.MeshStandardMaterial({ map: tex.asphalt, roughness: 0.95 })
+  const concrete = new THREE.MeshStandardMaterial({ map: tex.concrete, roughness: 0.9 })
+  // boxes get world-space UVs (feet) once the scene is assembled
+  const paved = (mesh) => {
+    mesh.userData.uv = 'wall'
+    return mesh
+  }
   const flat = (pts, y, material) => {
     const geo = new THREE.ShapeGeometry(new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, z))))
     geo.rotateX(Math.PI / 2)
+    faceUp(geo)
     const mesh = new THREE.Mesh(geo, material)
     mesh.position.y = y
     mesh.receiveShadow = true
     group.add(mesh)
   }
 
+  let mark = snap([group])
   // Front and side lawns up to the curb, notched for the basement cutaway
   flat([[-FAR, 0], [0, 0], [0, 32], [HOUSE_W, 32], [HOUSE_W, 0], [FAR, 0], [FAR, curbY], [-FAR, curbY]], -0.02, groundMat)
   // Orchard Street, curbs, and the far side
   const farSide = curbY + roadWidth
-  addBox(group, -FAR, curbY, FAR, farSide, -0.62, -0.45, plain('#606268', { roughness: 0.95 }), { receive: true })
+  paved(addBox(group, -FAR, curbY, FAR, farSide, -0.62, -0.45, asphalt, { receive: true }))
   for (const y of [curbY, farSide - 0.5]) addBox(group, -FAR, y, FAR, y + 0.5, -0.62, 0.02, plain('#cbc8c1'), { receive: true })
   flat([[-FAR, farSide], [FAR, farSide], [FAR, FAR], [-FAR, FAR]], -0.02, groundMat)
 
@@ -270,20 +435,22 @@ function buildSite(group, woods, plain) {
   }
   const back = new THREE.BufferGeometry()
   back.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  back.setAttribute('uv', new THREE.Float32BufferAttribute(pos.flatMap((v, i) => (i % 3 === 1 ? [] : [v])), 2))
   back.setIndex(idx)
-  back.computeVertexNormals()
+  faceUp(back)
   const backMesh = new THREE.Mesh(back, groundMat)
   backMesh.receiveShadow = true
   group.add(backMesh)
 
   // Driveways (over the depressed curb) and the concrete at the porch steps
-  const asphalt = plain('#55575c', { roughness: 0.95 })
-  addBox(group, SITE.drive.x0, 36, SITE.drive.x1, curbY + 0.5, -0.03, 0.04, asphalt, { receive: true })
+  paved(addBox(group, SITE.drive.x0, 36, SITE.drive.x1, curbY + 0.5, -0.03, 0.04, asphalt, { receive: true }))
   const nd = SITE.neighborDrive
-  addBox(group, nd.x0, nd.y0, nd.x1, curbY + 0.5, -0.03, 0.035, asphalt, { receive: true })
+  paved(addBox(group, nd.x0, nd.y0, nd.x1, curbY + 0.5, -0.03, 0.035, asphalt, { receive: true }))
   const w = SITE.walk
-  addBox(group, w.x0, w.y0, w.x1, w.y1, -0.03, 0.06, plain(COLORS.walk), { receive: true })
+  paved(addBox(group, w.x0, w.y0, w.x1, w.y1, -0.03, 0.06, concrete, { receive: true }))
 
+  nameSince(mark, 'lawn_and_paving')
+  mark = snap([group])
   // Lines on the ground: lot lines, required setbacks, 100-year flood limit
   const { x0, x1, y0, y1 } = lot
   groundRibbon(group, [[[x0, y1], [x1, y1], [x1, y0], [x0, y0], [x0, y1]]], { width: 0.35, color: '#f2b53c' })
@@ -305,7 +472,9 @@ function buildSite(group, woods, plain) {
     group.add(cap)
   }
 
-  buildFences(group, plain)
+  nameSince(mark, 'survey_lines_and_markers')
+  mark = snap([group])
+  buildFences(group, plain) // fences name themselves; the gate joins the pole below
 
   // Utility pole and the overhead service drop to the garage
   const [px, py] = SITE.pole
@@ -340,6 +509,7 @@ function buildSite(group, woods, plain) {
   addBox(group, face, sv.y + 0.15, face + 0.25, sv.y + 0.55, sv.meterZ - 1.55, sv.meterZ - 1.0, meterMat)
   addBox(group, face, sv.y - 0.05, face + 0.07, sv.y + 0.05, 0.3, sv.meterZ - 0.65, wireMat)
 
+  nameSince(mark, 'gate_pole_and_service')
   buildPlantings(group, plain)
   buildFrontBeds(group, plain)
   // Big trees go with the woods: hidden in the floor cutaways so they don't cover rooms
@@ -350,19 +520,16 @@ function buildSite(group, woods, plain) {
 // Mulched beds along the porch with a row of low, rounded shrubs
 function buildFrontBeds(group, plain) {
   const mulch = plain('#4a3426', { roughness: 1 })
-  const shrub = plain('#3f6b35')
   for (const b of SITE.beds) {
+    const mark = group.children.length
     addBox(group, b.x0, b.y0, b.x1, b.y1, -0.02, 0.07, mulch, { receive: true })
     const n = Math.max(1, Math.round((b.x1 - b.x0) / 3.2))
     for (let i = 0; i < n; i++) {
       const x = b.x0 + ((b.x1 - b.x0) * (i + 0.5)) / n
       const r = 0.85 + ((i * 7) % 3) * 0.12
-      const s = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), shrub)
-      s.position.set(x, r * 0.7, (b.y0 + b.y1) / 2 + 0.2)
-      s.scale.set(1, 0.85, 1)
-      s.castShadow = s.receiveShadow = true
-      group.add(s)
+      group.add(clump(x, r * 0.62, (b.y0 + b.y1) / 2 + 0.2, r, r * 0.8, r, '#4a7a3a', i % 3))
     }
+    tagSince(group, mark, { kind: 'site', name: nextName('planting_bed') })
   }
 }
 
@@ -370,43 +537,36 @@ function buildFrontBeds(group, plain) {
 // layered canopy, green with autumn orange at the edges (photo)
 function buildMaples(group, plain) {
   const bark = plain('#4b3d33')
-  const leaves = [plain('#5f7f3c'), plain('#6e8a43'), plain('#a8703a'), plain('#8b5a33')]
-  const t = PLANT_TYPES.maple
   for (const p of SITE.plants.filter((pl) => pl.kind === 'maple')) {
     const [x, y] = p.at
     const g = gradeAt(y)
+    const rnd = seeded(Math.round(x * 31 + y * 17) + 5)
+    const t = PLANT_TYPES.maple
+    const mark = group.children.length
     const base = new THREE.Vector3(x, g, y)
+    // a low fork: four leaning trunks, each splitting into two limbs
     for (const [dx, dy] of [[1.8, 0.6], [-1.6, 1.0], [0.4, -1.8], [-0.6, -0.4]]) {
-      const top = new THREE.Vector3(x + dx * 2.2, g + t.height * 0.45, y + dy * 2.2)
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.32, base.distanceTo(top), 7), bark)
-      trunk.position.copy(base).add(top).multiplyScalar(0.5)
-      trunk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(base).normalize())
-      trunk.castShadow = true
-      group.add(trunk)
+      const fork = new THREE.Vector3(x + dx * 1.3, g + t.height * 0.28, y + dy * 1.3)
+      group.add(limb(base, fork, 0.34, 0.24, bark))
+      for (const s of [-1, 1]) {
+        const tip = new THREE.Vector3(x + dx * 2.6 + s * dy * 0.9, g + t.height * (0.5 + rnd() * 0.08), y + dy * 2.6 - s * dx * 0.9)
+        group.add(limb(fork, tip, 0.22, 0.1, bark, 6))
+      }
     }
-    // Airy, layered canopy: many small flattened clumps in a broad dome,
-    // wider low and narrower high
-    let seed = Math.round(x * 31 + y * 17) + 5
-    const rnd = () => {
-      seed = (seed * 16807) % 2147483647
-      return seed / 2147483647
-    }
-    for (let i = 0; i < 30; i++) {
-      const h = 0.45 + rnd() * 0.5 // height fraction
-      const reach = (t.spread / 2) * (1.05 - (h - 0.45) * 1.2) * Math.sqrt(rnd())
+    // Layered canopy: flattened clumps in a broad dome, wider low and
+    // narrower high; green inside, orange on the outer edges
+    for (let i = 0; i < 26; i++) {
+      const h = 0.42 + rnd() * 0.52 // height fraction
+      const edge = Math.sqrt(rnd())
+      const reach = (t.spread / 2) * (1.02 - (h - 0.42) * 1.15) * edge
       const a = rnd() * Math.PI * 2
-      const r = 1.8 + rnd() * 1.6
-      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves[rnd() < 0.72 ? Math.floor(rnd() * 2) : 2 + Math.floor(rnd() * 2)])
-      blob.position.set(x + Math.cos(a) * reach, g + h * t.height, y + Math.sin(a) * reach)
-      blob.scale.set(1, 0.6, 1)
-      blob.castShadow = blob.receiveShadow = true
-      group.add(blob)
+      const r = 2.2 + rnd() * 1.8
+      const color = edge > 0.72 && rnd() < 0.7 ? (rnd() < 0.6 ? '#b8743a' : '#a35a33') : rnd() < 0.5 ? '#5f7f3c' : '#71883f'
+      group.add(clump(x + Math.cos(a) * reach, g + h * t.height, y + Math.sin(a) * reach, r, r * 0.55, r, color, i % 3))
     }
+    tagSince(group, mark, { kind: 'plant', name: nextName('japanese_maple') })
   }
 }
-
-// Unit-size lathe profile [radius, height] turned into a solid of revolution.
-const lathe = (profile, segments = 18) => new THREE.LatheGeometry(profile.map(([r, h]) => new THREE.Vector2(r, h)), segments)
 
 function buildPlantings(group, plain) {
   const bark = plain('#5b4636')
@@ -417,39 +577,36 @@ function buildPlantings(group, plain) {
   // Thuja Green Giant: narrow column, full near the bottom, soft point on top
   const thujas = SITE.plants.filter((p) => p.kind === 'thuja')
   const t = PLANT_TYPES.thuja
-  const thujaGeo = lathe([[0, 0], [0.4, 0.02], [0.5, 0.15], [0.47, 0.4], [0.37, 0.65], [0.22, 0.86], [0.08, 0.97], [0, 1]])
-  const thujaMesh = new THREE.InstancedMesh(thujaGeo, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 }), thujas.length)
+  const thujaMesh = new THREE.InstancedMesh(thujaGeometry(), foliageMaterial({ roughness: 0.95 }), thujas.length)
   thujas.forEach((p, i) => {
     const [x, y] = p.at
     const k = 0.93 + ((i * 37) % 11) / 75 // slight size variation
     m.compose(new THREE.Vector3(x, gradeAt(y) - 0.1, y), q, new THREE.Vector3(t.spread * k, t.height * k, t.spread * k))
     thujaMesh.setMatrixAt(i, m)
-    color.setHSL(0.33, 0.42, 0.2 + ((i * 13) % 7) / 100)
+    color.setHSL(0.31, 0.45, 0.24 + ((i * 13) % 7) / 100)
     thujaMesh.setColorAt(i, color)
   })
   thujaMesh.castShadow = thujaMesh.receiveShadow = true
+  // one Maya mesh per tree
+  thujaMesh.userData.instanceParts = thujas.map(() => ({ kind: 'plant', name: nextName('thuja') }))
   group.add(thujaMesh)
 
   for (const p of SITE.plants) {
     const [x, y] = p.at
     const g = gradeAt(y)
+    const mark = group.children.length
     if (p.kind === 'serviceberry') {
       // Multi-stem small tree with a loose, rounded crown
       const s = PLANT_TYPES.serviceberry
-      const leaves = plain('#6f8f3e')
-      for (const [dx, dy, lean] of [[0, 0, 0], [0.35, 0.2, 0.18], [-0.3, 0.25, -0.15]]) {
-        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, s.height * 0.55, 6), bark)
-        stem.position.set(x + dx, g + s.height * 0.27, y + dy)
-        stem.rotation.z = lean
-        stem.castShadow = true
-        group.add(stem)
+      const base = new THREE.Vector3(x, g, y)
+      for (const [dx, dy] of [[0, 0], [0.7, 0.4], [-0.6, 0.5], [0.2, -0.7]]) {
+        group.add(limb(base, new THREE.Vector3(x + dx, g + s.height * 0.6, y + dy), 0.08, 0.04, bark, 6))
       }
-      for (const [dx, dz, dy, r] of [[0, 0.62, 0, 1.6], [0.9, 0.55, 0.4, 1.2], [-0.8, 0.6, -0.3, 1.25], [0.2, 0.82, -0.5, 1.1]]) {
-        const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves)
-        blob.position.set(x + dx, g + s.height * dz + 1.2, y + dy)
-        blob.scale.set(s.spread / 4.2, 1, s.spread / 4.2)
-        blob.castShadow = blob.receiveShadow = true
-        group.add(blob)
+      for (const [dx, dz, dy, r, c] of [
+        [0, 0.66, 0, 1.6, '#6f8f3e'], [0.9, 0.56, 0.4, 1.2, '#7a9443'], [-0.8, 0.6, -0.3, 1.25, '#6a8a3b'],
+        [0.2, 0.84, -0.5, 1.1, '#9a7a35'], [-0.3, 0.8, 0.6, 1.0, '#6f8f3e'],
+      ]) {
+        group.add(clump(x + dx, g + s.height * dz + 0.8, y + dy, r * s.spread / 4.2, r * 0.9, r * s.spread / 4.2, c, Math.round(r * 10) % 3))
       }
     } else if (p.kind === 'cherry') {
       // Weeping form: straight trunk under a domed canopy whose edges hang down
@@ -458,15 +615,15 @@ function buildPlantings(group, plain) {
       trunk.position.set(x, g + c.height * 0.42, y)
       trunk.castShadow = true
       group.add(trunk)
-      const canopy = new THREE.Mesh(
-        lathe([[0.5, 0.3], [0.53, 0.5], [0.47, 0.72], [0.32, 0.88], [0.13, 0.98], [0, 1], [0, 0.82], [0.26, 0.72], [0.42, 0.5], [0.5, 0.3]], 24),
-        plain('#5d7f3b'),
-      )
-      canopy.position.set(x, g, y)
-      canopy.scale.set(c.spread, c.height, c.spread)
-      canopy.castShadow = canopy.receiveShadow = true
-      group.add(canopy)
+      // dome on top, then a ring of long clumps hanging from its edge
+      group.add(clump(x, g + c.height * 0.82, y, c.spread * 0.36, c.height * 0.2, c.spread * 0.36, '#5d7f3b', 0))
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2
+        const rr = c.spread * 0.36
+        group.add(clump(x + Math.cos(a) * rr, g + c.height * 0.55, y + Math.sin(a) * rr, 0.9, c.height * 0.3, 0.9, i % 2 ? '#5d7f3b' : '#678a40', i % 3))
+      }
     }
+    if (p.kind === 'serviceberry' || p.kind === 'cherry') tagSince(group, mark, { kind: 'plant', name: nextName(p.kind) })
   }
 }
 
@@ -518,7 +675,7 @@ function groundRibbon(group, paths, { width, color, dash = null, lift = 0.12 }) 
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
   geo.setIndex(idx)
-  geo.computeVertexNormals()
+  faceUp(geo)
   const mesh = new THREE.Mesh(
     geo,
     new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.25, side: THREE.DoubleSide, roughness: 0.8 }),
@@ -582,9 +739,19 @@ function buildFences(group, plain) {
   const mesh = chainLinkMaterial()
 
   for (const f of SITE.fences) {
+    const mark = group.children.length
     if (f.kind === 'vinyl') {
       verticalRibbon(group, f.pts, f.height, vinyl)
-      for (const [x, y] of postsAlong(f.pts, 8)) {
+      const vposts = postsAlong(f.pts, 8)
+      // top and bottom rails between the posts, standing proud of the boards
+      vposts.forEach(([x, y], i) => {
+        if (!i) return
+        const [px, py] = vposts[i - 1]
+        for (const [z, h] of [[f.height - 0.22, 0.4], [0.3, 0.3]]) {
+          beam(group, new THREE.Vector3(px, gradeAt(py) + z, py), new THREE.Vector3(x, gradeAt(y) + z, y), 0.26, h, white)
+        }
+      })
+      for (const [x, y] of vposts) {
         const g = gradeAt(y)
         addBox(group, x - 0.21, y - 0.21, x + 0.21, y + 0.21, g - 0.2, g + f.height + 0.15, white, { shadow: true })
         addBox(group, x - 0.27, y - 0.27, x + 0.27, y + 0.27, g + f.height + 0.15, g + f.height + 0.3, white)
@@ -606,6 +773,7 @@ function buildFences(group, plain) {
         }
       })
     }
+    tagSince(group, mark, { kind: 'site', name: nextName(`fence_${f.kind}`) })
   }
 
   // By the garage: a fixed panel from the wall to the hinge post, then a
@@ -646,6 +814,7 @@ function vinylMaterial() {
   g.fillRect(0, 22, c.width, 3)
   g.fillRect(0, c.height - 10, c.width, 3)
   const tex = new THREE.CanvasTexture(c)
+  tex.name = 'vinyl_fence'
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.repeat.set(1 / 2, 1 / 6)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -670,6 +839,7 @@ function chainLinkMaterial() {
     g.stroke()
   }
   const tex = new THREE.CanvasTexture(c)
+  tex.name = 'chain_link'
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.colorSpace = THREE.SRGBColorSpace
   return new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.35, side: THREE.DoubleSide, metalness: 0.4, roughness: 0.5 })
@@ -688,11 +858,7 @@ function buildWoods(group) {
     }
     return edge[edge.length - 1][1]
   }
-  let seed = 90
-  const rnd = () => {
-    seed = (seed * 16807) % 2147483647
-    return seed / 2147483647
-  }
+  const rnd = seeded(90)
   const spots = []
   for (let gx = -45; gx <= 100; gx += 10) {
     for (let gy = -135; gy <= 0; gy += 10) {
@@ -703,31 +869,13 @@ function buildWoods(group) {
       if (y > edgeY(x) - 5 * k) continue
       // The backyard itself is open: woods only on the neighboring lots
       if (x > lot.x0 - 4 && x < lot.x1 + 4 && y > lot.y0 - 4) continue
-      spots.push([x, y, k, rnd()])
+      spots.push([x, y, k])
     }
   }
-  const trunkGeo = new THREE.CylinderGeometry(0.45, 0.65, 1, 7)
-  trunkGeo.translate(0, 0.5, 0)
-  const crownGeo = new THREE.IcosahedronGeometry(1, 1)
-  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: '#5b4636', roughness: 1 }), spots.length)
-  const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true }), spots.length)
-  const m = new THREE.Matrix4()
-  const q = new THREE.Quaternion()
-  const color = new THREE.Color()
-  spots.forEach(([x, y, k, t], i) => {
-    const g = gradeAt(y)
-    const trunkH = 10 * k
-    const r = 6 * k
-    m.compose(new THREE.Vector3(x, g - 0.3, y), q, new THREE.Vector3(1, trunkH, 1))
-    trunks.setMatrixAt(i, m)
-    m.compose(new THREE.Vector3(x, g + trunkH + r * 0.55, y), q, new THREE.Vector3(r, r * 1.15, r))
-    crowns.setMatrixAt(i, m)
-    color.setHSL(0.24 + t * 0.08, 0.38 + t * 0.12, 0.27 + t * 0.1)
-    crowns.setColorAt(i, color)
-  })
-  trunks.castShadow = crowns.castShadow = true
-  crowns.receiveShadow = true
-  group.add(trunks, crowns)
+  buildForest(group, spots, gradeAt)
+  // Distance into the woods: behind the edge and outside the open backyard
+  const inside = (x, y) => Math.min(edgeY(x) - y - 2, Math.max(lot.x0 - 4 - x, x - lot.x1 - 4, lot.y0 - 4 - y))
+  forestFloor(group, { x0: -60, x1: 112, y0: -150, y1: 4 }, inside, gradeAt)
 }
 
 // ------------------------------------------------------------ deck
@@ -797,7 +945,7 @@ function buildDeck(group, mat) {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     geo.setIndex([0, 1, 2, 0, 2, 3])
-    geo.computeVertexNormals()
+    faceUp(geo)
     group.add(new THREE.Mesh(geo, m('#3a332c', { roughness: 1 })))
   }
 
@@ -1033,7 +1181,11 @@ const floorTextures = new Map()
 function floorFinish(level, flooring, clipPlanes, cache) {
   const key = level + flooring
   if (!cache.has(key)) {
-    if (!floorTextures.has(flooring)) floorTextures.set(flooring, FLOOR_TEXTURES[flooring]())
+    if (!floorTextures.has(flooring)) {
+      const tex = FLOOR_TEXTURES[flooring]()
+      tex.name = `floor_${flooring}` // the texture's file name in the Maya export
+      floorTextures.set(flooring, tex)
+    }
     cache.set(
       key,
       new THREE.MeshStandardMaterial({
@@ -1075,6 +1227,7 @@ function deckingTexture() {
   const tex = new THREE.CanvasTexture(c)
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.repeat.set(1 / 8, 12 / 11.5) // canvas = 8 ft of two boards
+  tex.name = 'decking'
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 4
   deckingTex = tex
@@ -1098,6 +1251,7 @@ function latticeMaterial(mat, color = DECK_COLORS.lattice) {
     g.stroke()
   }
   const tex = new THREE.CanvasTexture(c)
+  tex.name = 'lattice'
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.repeat.set(1 / 1.2, 1 / 1.2)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -1184,7 +1338,30 @@ function wallEnds(walls) {
   return ends
 }
 
-function addWall(group, wall, mat, [e0, e1] = [0, 0]) {
+// White 5/4 corner boards on the outside corners, from the sill to the eave
+const CORNERS = [
+  // [x, y, outward x, outward y, level, bottom, top]
+  [0, 0, -1, -1, 'L1', H.ff1 - 0.55, H.ff2], [36.17, 0, 1, -1, 'L1', H.ff1 - 0.55, H.ff2],
+  [0, 32, -1, 1, 'L1', H.ff1 - 0.55, H.ff2],
+  [0, 0, -1, -1, 'L2', H.ff2, H.ceil2], [36.17, 0, 1, -1, 'L2', H.ff2, H.ceil2],
+  [0, 32, -1, 1, 'L2', H.ff2, H.ceil2], [36.17, 32, 1, 1, 'L2', H.ff2, H.ceil2],
+  [57, 3, 1, -1, 'L1', H.garageFloor - 0.3, H.garagePlate], [57, 36, 1, 1, 'L1', H.garageFloor - 0.3, H.garagePlate],
+  [36.17, 36, -1, 1, 'L1', H.garageFloor - 0.3, H.garagePlate],
+]
+function addCornerBoards(levelGroups, mat) {
+  const w = 0.42 // board width on each face
+  const t = 0.08
+  for (const [x, y, sx, sy, level, z0, z1] of CORNERS) {
+    const m = mat(level, '#fbfaf7', { roughness: 0.5 })
+    const ox = x + sx * 0.25 // outside face of the 6" exterior wall
+    const oy = y + sy * 0.25
+    // one board on each face, meeting at the corner
+    addBox(levelGroups[level], ox, oy, ox + sx * t, oy - sy * w, z0, z1, m, { shadow: true })
+    addBox(levelGroups[level], ox + sx * t, oy + sy * t, ox - sx * w, oy, z0, z1, m, { shadow: true })
+  }
+}
+
+function addWall(group, wall, mat, [e0, e1] = [0, 0], siding, name = 'wall') {
   const lvl = levelById[wall.level]
   const base = wall.base ?? lvl.floor
   const h = wall.h ?? (wall.kind === 'foundation' ? 8.4 : lvl.height)
@@ -1196,12 +1373,27 @@ function addWall(group, wall, mat, [e0, e1] = [0, 0]) {
   const ang = Math.atan2(uy, ux)
   const t = wall.t
   const isFoundation = wall.kind === 'foundation'
-  const wallMat = mat(wall.level, isFoundation ? '#a8a49c' : wall.ext ? '#ece8df' : '#f6f4ef')
+  let wallMat = mat(wall.level, isFoundation ? '#a8a49c' : '#f6f4ef')
+  if (wall.ext && !isFoundation) {
+    // Box faces: +x, -x (ends), +y, -y (top, bottom), +z, -z (the two sides).
+    // Local +z points to (-uy, ux) in plan; siding goes on whichever side is
+    // outside the house, interior paint on the other.
+    const mx = (ax + bx) / 2 - uy * 0.8
+    const my = (ay + by) / 2 + ux * 0.8
+    const plusZInside = ROOMS.some(
+      (r) => r.level === wall.level && r.type !== 'porch' && r.type !== 'deck' && pointInPoly([mx, my], r.poly),
+    )
+    const paint = wallMat
+    const end = mat(wall.level, '#fbfaf7')
+    const side = siding(wall.level)
+    wallMat = [end, end, paint, paint, plusZInside ? paint : side, plusZInside ? side : paint]
+  }
 
   const piece = (s0, s1, z0, z1, material, thick = t, offset = 0) => {
     if (s1 - s0 < 0.01 || z1 - z0 < 0.01) return null
     const geo = new THREE.BoxGeometry(s1 - s0, z1 - z0, thick)
     const m = new THREE.Mesh(geo, material)
+    if (Array.isArray(material)) m.userData.uv = 'wall'
     const sm = (s0 + s1) / 2
     m.position.set(ax + ux * sm - uy * offset, base + (z0 + z1) / 2, ay + uy * sm + ux * offset)
     m.rotation.y = -ang
@@ -1242,6 +1434,7 @@ function addWall(group, wall, mat, [e0, e1] = [0, 0]) {
     piece(op.s0, op.s1, 0, op.sill, wallMat)
     piece(op.s0, op.s1, op.head, h, wallMat)
     s = op.s1
+    const mark = group.children.length
 
     if (op.type === 'window') {
       piece(op.s0, op.s1, op.sill, op.head, mat(wall.level, '#9fc3dd', { opacity: 0.45, roughness: 0.1 }), 0.06)
@@ -1266,10 +1459,26 @@ function addWall(group, wall, mat, [e0, e1] = [0, 0]) {
       }
     } else if (op.type === 'door') {
       if (op.style === 'garage') {
-        piece(op.s0, op.s1, op.sill, op.head, mat(wall.level, '#f7f6f2', { roughness: 0.5 }), 0.15)
-        for (let z = op.sill + 1.75; z < op.head - 0.2; z += 1.75) {
-          piece(op.s0 + 0.1, op.s1 - 0.1, z - 0.04, z + 0.04, mat(wall.level, '#d9d7d0'), 0.22)
+        // Insulated steel door: four sections of four raised short panels (photo)
+        const door = mat(wall.level, '#f4f3ee', { roughness: 0.45 })
+        const groove = mat(wall.level, '#cfccc4')
+        piece(op.s0, op.s1, op.sill, op.head, door, 0.15)
+        const rows = 4
+        const cols = 4
+        const sh = (op.head - op.sill) / rows
+        const sw = (op.s1 - op.s0) / cols
+        for (let j = 0; j < rows; j++) {
+          const z0 = op.sill + j * sh
+          if (j) piece(op.s0 + 0.05, op.s1 - 0.05, z0 - 0.025, z0 + 0.025, groove, 0.2)
+          for (let i = 0; i < cols; i++) {
+            const a = op.s0 + i * sw
+            piece(a + 0.22, a + sw - 0.22, z0 + 0.32, z0 + sh - 0.32, door, 0.23)
+          }
         }
+        const white = mat(wall.level, '#ffffff')
+        piece(op.s0 - 0.35, op.s0, op.sill, op.head + 0.35, white, t + 0.1)
+        piece(op.s1, op.s1 + 0.35, op.sill, op.head + 0.35, white, t + 0.1)
+        piece(op.s0 - 0.35, op.s1 + 0.35, op.head, op.head + 0.35, white, t + 0.1)
       } else if (op.style === 'front') {
         // Black 6-panel door with a small light, between two sidelights, in white casing (photo)
         const black = mat(wall.level, '#1f2328', { roughness: 0.45 })
@@ -1299,6 +1508,7 @@ function addWall(group, wall, mat, [e0, e1] = [0, 0]) {
         piece(op.s0, op.s1, op.sill, op.sill + 0.12, trim, t + 0.06)
       }
     }
+    tagSince(group, mark, { kind: 'opening', name: `${name}_${op.style === 'garage' ? 'garage_door' : op.type}${ops.indexOf(op) + 1}` })
   }
   piece(s, L + e1, 0, h, wallMat)
 }
@@ -1407,7 +1617,7 @@ function addStair(group, s, material) {
 }
 
 // Gable roof built from two thick sloped slabs. axis = ridge direction.
-function gableRoof(group, r, material, edgeMat) {
+function gableRoof(group, r, material, edgeMat, trimMat) {
   const T = 0.35
   const across0 = r.axis === 'x' ? r.z0 : r.x0
   const across1 = r.axis === 'x' ? r.z1 : r.x1
@@ -1451,6 +1661,38 @@ function gableRoof(group, r, material, edgeMat) {
   if (r.axis === 'x') capMesh.position.set(alongMid, ridgeY, mid)
   else capMesh.position.set(mid, ridgeY, alongMid)
   group.add(capMesh)
+  if (trimMat) roofTrim(group, r, { along0, along1, mid, run, yEave, lift, ridgeY: r.base + half * r.pitch + lift }, trimMat)
+}
+
+// White aluminum trim from the aerial photo: fascia with a K-style gutter
+// along each eave, and a rake board up each gable edge.
+function roofTrim(group, r, g, trimMat) {
+  const { along0, along1, mid, run, yEave, lift, ridgeY } = g
+  // (along, across) in plan to world x/z for this roof's ridge direction
+  const box = (al0, al1, ac0, ac1, y0, y1) =>
+    r.axis === 'x'
+      ? addBox(group, al0, ac0, al1, ac1, y0, y1, trimMat, { shadow: true })
+      : addBox(group, ac0, al0, ac1, al1, y0, y1, trimMat, { shadow: true })
+  const P = (along, y, across) => (r.axis === 'x' ? new THREE.Vector3(along, y, across) : new THREE.Vector3(across, y, along))
+  if (r.eave > 0) {
+    for (const side of [-1, 1]) {
+      const edge = mid + side * run
+      // fascia over the rafter tails
+      box(along0, along1, edge, edge + side * 0.08, yEave - 0.55, yEave + lift + 0.05)
+      // gutter hung on the fascia
+      box(along0, along1, edge + side * 0.08, edge + side * 0.45, yEave - 0.5, yEave - 0.08)
+    }
+  }
+  const ends = [along1]
+  if (!(r.noStartRake || r.noBackRake)) ends.push(along0)
+  for (const end of ends) {
+    const out = end === along1 ? 0.06 : -0.06
+    for (const side of [-1, 1]) {
+      const a = P(end + out, yEave + lift - 0.25, mid + side * run)
+      const b = P(end + out, ridgeY - 0.25, mid)
+      beam(group, a, b, 0.12, 0.6, trimMat)
+    }
+  }
 }
 
 // Triangular wall under a gable. plane 'x' = wall at x = at spanning z, 'z' = wall at z = at spanning x.
@@ -1568,7 +1810,7 @@ function bayRoof(group, roofMat, capMat, trimMat) {
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
   geo.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 7, 8, 9])
-  geo.computeVertexNormals()
+  faceUp(geo)
   const roof = new THREE.Mesh(geo, roofMat)
   roof.position.y = 0.08
   roof.castShadow = roof.receiveShadow = true

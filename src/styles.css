@@ -1115,3 +1115,19 @@ details.collapsible[open] summary {
 
 .item-pin[data-category='Drainage'],
 .pin-dot[data-category='Drainage'] { background: var(--c-Drainage); }
+
+/* Dev-only Maya export progress (?export=maya) */
+.export-status {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
