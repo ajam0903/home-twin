@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
 import { ROOMS, ITEMS, levelById, roomArea, plantedInfo } from '../model/house.js'
 import { FURNITURE_PRESETS, feetInches } from '../model/furniture.js'
+import { roomNoteKey } from '../model/notes.js'
 import { Icon } from './Icons.jsx'
 
 // First floor first; the property goes with the whole house.
 const ORDER = ['L1', 'L2', 'B', 'site']
 const groupName = (id) => (id === 'site' ? 'Property' : levelById[id].name)
 
-export default function RoomList({ selection, onSelect, level, furniture = [], onAddFurniture }) {
+export default function RoomList({ selection, onSelect, level, furniture = [], onAddFurniture, notes = {} }) {
   const [q, setQ] = useState('')
   const query = q.trim().toLowerCase()
 
@@ -17,12 +18,17 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
     return shown
       .map((id) => ({
         id,
-        rooms: ROOMS.filter((r) => r.level === id && match(`${r.name} ${r.subtitle ?? ''} ${r.type}`)),
+        // with the whole house, outdoor rooms (the deck) are listed with the property
+        rooms: ROOMS.filter((r) => {
+          const listed = level === 'exterior' && r.outdoor ? 'site' : r.level
+          // the search also looks through your notes for the room
+          return listed === id && match(`${r.name} ${r.subtitle ?? ''} ${r.type} ${notes[roomNoteKey(r.id)] ?? ''}`)
+        }),
         items: ITEMS.filter((i) => i.level === id && match(`${i.name} ${i.category}`)),
         furniture: furniture.filter((f) => f.level === id && match(`${f.name} furniture`)),
       }))
       .filter((g) => g.rooms.length || g.items.length || g.furniture.length || (g.id === level && !query))
-  }, [query, level, furniture])
+  }, [query, level, furniture, notes])
 
   const isSel = (kind, id) => selection?.kind === kind && selection.id === id
 
@@ -49,7 +55,10 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
                     <span className="row-title">{r.name}</span>
                     {r.subtitle && <span className="row-sub">{r.subtitle}</span>}
                   </span>
-                  <span className="row-meta">{roomArea(r)} sf</span>
+                  <span className="row-meta">
+                    {notes[roomNoteKey(r.id)] && <span className="note-dot" title="Has your notes" />}
+                    {roomArea(r)} sf
+                  </span>
                 </button>
               </li>
             ))}

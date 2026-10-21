@@ -1332,6 +1332,30 @@
       "bumpScale": 0,
       "emissive": "#000000",
       "emissiveIntensity": 1
+    },
+    "mat_color_4f4238": {
+      "roughness": 1,
+      "metalness": 0,
+      "opacity": 1,
+      "transparent": false,
+      "alphaTest": 0,
+      "vertexColors": false,
+      "bump": null,
+      "bumpScale": 0,
+      "emissive": "#000000",
+      "emissiveIntensity": 1
+    },
+    "mat_foliage_113": {
+      "roughness": 0.92,
+      "metalness": 0,
+      "opacity": 1,
+      "transparent": false,
+      "alphaTest": 0,
+      "vertexColors": true,
+      "bump": null,
+      "bumpScale": 0,
+      "emissive": "#000000",
+      "emissiveIntensity": 1
     }
   }
 }

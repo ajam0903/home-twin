@@ -2,14 +2,30 @@ import { useEffect, useState } from 'react'
 import {
   HOME, ITEMS, ROOMS, FLOORING_NAMES, FLOOR_FACTS, levelById, levelName, roomById, itemById, roomArea, openingsForRoom, pointInPoly, plantedInfo,
 } from '../model/house.js'
+import { roomNoteKey } from '../model/notes.js'
+import { measuredLength } from '../model/measurements.js'
+import { feetInchesText, inchesText } from '../three/measure.js'
 import { feetInches } from '../model/furniture.js'
 import { Icon } from './Icons.jsx'
 
 export default function DetailPanel({
   selection, onSelect, onClose, hideHeader = false, level = 'exterior', furniture = [], onFurnitureChange, onFurnitureDelete,
+  notes = {}, onNoteChange,
+  measurements = [], onRenameMeasurement, onRemoveMeasurement, onFocusMeasurement,
 }) {
   if (selection?.kind === 'room' && roomById[selection.id]) {
-    return <RoomDetail room={roomById[selection.id]} furniture={furniture} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} />
+    const key = roomNoteKey(selection.id)
+    return (
+      <RoomDetail
+        room={roomById[selection.id]}
+        furniture={furniture}
+        onSelect={onSelect}
+        onClose={onClose}
+        hideHeader={hideHeader}
+        note={notes[key] ?? ''}
+        onNoteChange={onNoteChange ? (text) => onNoteChange(key, text) : null}
+      />
+    )
   }
   if (selection?.kind === 'item' && itemById[selection.id]) {
     return <ItemDetail item={itemById[selection.id]} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} />
@@ -18,8 +34,55 @@ export default function DetailPanel({
   if (piece) {
     return <FurnitureDetail piece={piece} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} onChange={onFurnitureChange} onDelete={onFurnitureDelete} />
   }
-  if (levelById[level]) return <FloorOverview level={level} furniture={furniture} onSelect={onSelect} />
-  return <HomeOverview />
+  const saved = measurements.length > 0 && (
+    <div className="detail">
+      <SavedMeasurements list={measurements} onRename={onRenameMeasurement} onRemove={onRemoveMeasurement} onFocus={onFocusMeasurement} />
+    </div>
+  )
+  if (levelById[level]) {
+    return (
+      <>
+        <FloorOverview level={level} furniture={furniture} onSelect={onSelect} />
+        {saved}
+      </>
+    )
+  }
+  return (
+    <>
+      <HomeOverview />
+      {saved}
+    </>
+  )
+}
+
+// Saved measurements for the view: name them, jump to one, or delete it
+function SavedMeasurements({ list, onRename, onRemove, onFocus }) {
+  return (
+    <Section title={`Saved measurements (${list.length})`}>
+      <ul className="saved-measures">
+        {list.map((m) => {
+          const len = measuredLength(m)
+          return (
+            <li key={m.id}>
+              <input
+                value={m.name ?? ''}
+                placeholder="Name it (e.g. sofa wall)"
+                onChange={(e) => onRename?.(m.id, e.target.value)}
+                aria-label="Measurement name"
+              />
+              <button type="button" className="link" onClick={() => onFocus?.(m)} title="Show it in the view">
+                {feetInchesText(len)} <span>{inchesText(len)}</span>
+              </button>
+              <button type="button" className="icon-btn small" onClick={() => onRemove?.(m.id)} aria-label="Delete this measurement">
+                <Icon.close width={14} height={14} />
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="muted">Saved in this browser.</p>
+    </Section>
+  )
 }
 
 const roomAt = (level, x, y) => ROOMS.find((r) => r.level === level && pointInPoly([x, y], r.poly))
@@ -139,7 +202,7 @@ function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDel
           Remove
         </button>
       </div>
-      <p className="muted">Drag the piece in the 3D view to move it (floor views). Changes are saved in this browser.</p>
+      <p className="muted">Click a piece in the 3D view to select it, then drag it to move it (floor views). Changes are saved in this browser.</p>
     </div>
   )
 }
@@ -185,7 +248,7 @@ function Header({ kicker, title, subtitle, onClose }) {
   )
 }
 
-function RoomDetail({ room, furniture, onSelect, onClose, hideHeader }) {
+function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, note, onNoteChange }) {
   const openings = openingsForRoom(room)
   const items = ITEMS.filter((i) => i.level === room.level && pointInPoly(i.at, room.poly))
   const pieces = furniture.filter((f) => f.level === room.level && pointInPoly([f.x, f.y], room.poly))
@@ -198,6 +261,7 @@ function RoomDetail({ room, furniture, onSelect, onClose, hideHeader }) {
         <Stat label="Ceiling" value={room.ceiling} />
         {room.flooring && <Stat label="Flooring" value={FLOORING_NAMES[room.flooring]} />}
       </div>
+      {onNoteChange && <MyNotes value={note} onChange={onNoteChange} />}
       {room.notes.length > 0 && (
         <Section title="From the drawings">
           <ul className="bullets">
@@ -207,6 +271,7 @@ function RoomDetail({ room, furniture, onSelect, onClose, hideHeader }) {
           </ul>
         </Section>
       )}
+      <DetailSections sections={room.sections} />
       {openings.length > 0 && (
         <Section title={`Windows & doors (${openings.length})`}>
           <ul className="spec-list">
@@ -263,15 +328,49 @@ function ItemDetail({ item, onSelect, onClose, hideHeader }) {
         </div>
       )}
       {item.planted && <PlantedStats planted={item.planted} />}
-      <Section title={item.level === 'site' ? 'Details' : 'From the drawings'}>
-        <ul className="bullets">
-          {item.details.map((d) => (
-            <li key={d}>{d}</li>
-          ))}
-        </ul>
-      </Section>
+      {item.details && (
+        <Section title={item.level === 'site' ? 'Details' : 'From the drawings'}>
+          <ul className="bullets">
+            {item.details.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        </Section>
+      )}
+      <DetailSections sections={item.sections} />
     </div>
   )
+}
+
+// The owner's own notes for a room: saved as they type, in this browser
+function MyNotes({ value, onChange }) {
+  return (
+    <section className="detail-section my-notes">
+      <h3>My notes</h3>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Paint colors, measurements, what is stored here, things to fix..."
+        rows={Math.min(12, Math.max(3, value.split('\n').length + 1))}
+      />
+      <p className="muted">Saved in this browser.</p>
+    </section>
+  )
+}
+
+// One listing that covers several parts (the deck, the arborvitae rows...):
+// a titled list of notes for each part
+function DetailSections({ sections }) {
+  if (!sections?.length) return null
+  return sections.map((sec) => (
+    <Section key={sec.title} title={sec.title}>
+      <ul className="bullets">
+        {sec.details.map((d) => (
+          <li key={d}>{d}</li>
+        ))}
+      </ul>
+    </Section>
+  ))
 }
 
 function PlantedStats({ planted }) {

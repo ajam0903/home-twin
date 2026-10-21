@@ -3,7 +3,7 @@ import {
   H, LEVELS, levelById, ROOMS, WALLS, FIXTURES, DECK, SITE, PLANT_TYPES, BAY, STAIR, openingPoint, roomFloor, gradeAt, deckY,
   pointInPoly,
 } from '../model/house.js'
-import { shingleTextures, sidingTextures, grassTexture, asphaltTexture, concreteTexture, applyWorldUV } from './textures.js'
+import { shingleTextures, sidingTextures, concreteTexture, applyWorldUV } from './textures.js'
 import { buildForest, forestFloor, clump, limb, thujaGeometry, foliageMaterial, seeded, setVegetationDetail } from './vegetation.js'
 
 // Every mesh added to `group` since child index `mark` belongs to one named
@@ -60,8 +60,6 @@ function exterior() {
     exteriorTextures = {
       shingles: shingleTextures(8),
       siding: sidingTextures(8),
-      grass: grassTexture(8),
-      asphalt: asphaltTexture(8),
       concrete: concreteTexture(8),
     }
     // file names in the Maya export
@@ -375,7 +373,11 @@ export function buildHouse({ lowDetail = false } = {}) {
   nameSince(mark, 'drainage')
   mark = snap(allGroups())
   // Excavation walls visible in the basement cutaway
-  addBox(siteGroup, -0.55, -0.55, 36.72, -0.5, H.basementFloor, -0.12, plain('#7a6a58'))
+  const earth = plain('#7a6a58')
+  addBox(siteGroup, -0.55, -0.55, 36.72, -0.5, H.basementFloor, -0.12, earth)
+  // around the basement under the study wing
+  addBox(siteGroup, 36.17, 2.45, 51.05, 2.5, H.basementFloor, -0.12, earth)
+  addBox(siteGroup, 51, 2.45, 51.05, 14.5, H.basementFloor, -0.12, earth)
   nameSince(mark, 'excavation')
 
   // World-space UVs (feet) for the textured exterior, so shingle courses and
@@ -393,12 +395,15 @@ export function buildHouse({ lowDetail = false } = {}) {
 // ------------------------------------------------------------ property
 
 const FAR = 450
+export const LAWN_COLOR = '#7ba163'
+export const ASPHALT_COLOR = '#535457'
 
 function buildSite(group, woods, plain) {
   const { lot, setbacks: sb, curbY, roadWidth } = SITE
   const tex = exterior()
-  const groundMat = new THREE.MeshStandardMaterial({ map: tex.grass, roughness: 1, side: THREE.DoubleSide })
-  const asphalt = new THREE.MeshStandardMaterial({ map: tex.asphalt, roughness: 0.95 })
+  // lawn and asphalt are flat colors: a repeating texture shows its tiling
+  const groundMat = new THREE.MeshStandardMaterial({ color: LAWN_COLOR, roughness: 1, side: THREE.DoubleSide })
+  const asphalt = new THREE.MeshStandardMaterial({ color: ASPHALT_COLOR, roughness: 0.95 })
   const concrete = new THREE.MeshStandardMaterial({ map: tex.concrete, roughness: 0.9 })
   // boxes get world-space UVs (feet) once the scene is assembled
   const paved = (mesh) => {
@@ -417,7 +422,8 @@ function buildSite(group, woods, plain) {
 
   let mark = snap([group])
   // Front and side lawns up to the curb, notched for the basement cutaway
-  flat([[-FAR, 0], [0, 0], [0, 32], [HOUSE_W, 32], [HOUSE_W, 0], [FAR, 0], [FAR, curbY], [-FAR, curbY]], -0.02, groundMat)
+  // (and for the basement under the study wing)
+  flat([[-FAR, 0], [0, 0], [0, 32], [HOUSE_W, 32], [HOUSE_W, 14.5], [51, 14.5], [51, 2.5], [HOUSE_W, 2.5], [HOUSE_W, 0], [FAR, 0], [FAR, curbY], [-FAR, curbY]], -0.02, groundMat)
   // Orchard Street, curbs, and the far side
   const farSide = curbY + roadWidth
   paved(addBox(group, -FAR, curbY, FAR, farSide, -0.62, -0.45, asphalt, { receive: true }))

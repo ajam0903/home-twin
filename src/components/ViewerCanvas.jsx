@@ -5,7 +5,10 @@ let exportStarted = false
 
 // Thin React wrapper around the imperative three.js viewer.
 const ViewerCanvas = forwardRef(function ViewerCanvas(
-  { level, cut, pins, selection, onSelect, insetTop = 0, insetBottom = 0, furniture, showFurniture, onFurnitureMove },
+  {
+    level, cut, pins, selection, onSelect, insetTop = 0, insetBottom = 0, furniture, showFurniture, onFurnitureMove,
+    measure = false, savedMeasurements, onMeasurementSave, onMeasurementRemove,
+  },
   ref,
 ) {
   const host = useRef(null)
@@ -14,11 +17,17 @@ const ViewerCanvas = forwardRef(function ViewerCanvas(
   onSelectRef.current = onSelect
   const onMoveRef = useRef(onFurnitureMove)
   onMoveRef.current = onFurnitureMove
+  const onSaveRef = useRef(onMeasurementSave)
+  onSaveRef.current = onMeasurementSave
+  const onRemoveRef = useRef(onMeasurementRemove)
+  onRemoveRef.current = onMeasurementRemove
 
   useEffect(() => {
     const v = new Viewer(host.current, {
       onSelect: (s) => onSelectRef.current?.(s),
       onFurnitureMove: (id, x, y) => onMoveRef.current?.(id, x, y),
+      onMeasurementSave: (m) => onSaveRef.current?.(m),
+      onMeasurementRemove: (id) => onRemoveRef.current?.(id),
     })
     viewer.current = v
     if (import.meta.env.DEV) window.__homeViewer = v // for camera checks in dev
@@ -60,9 +69,18 @@ const ViewerCanvas = forwardRef(function ViewerCanvas(
     viewer.current?.select(selection)
   }, [selection])
 
+  useEffect(() => {
+    viewer.current?.setMeasureMode(measure)
+  }, [measure])
+
+  useEffect(() => {
+    viewer.current?.setSavedMeasurements(savedMeasurements ?? [])
+  }, [savedMeasurements])
+
   useImperativeHandle(ref, () => ({
     home: () => viewer.current?.homeView(),
     top: () => viewer.current?.topView(),
+    focusMeasurement: (id) => viewer.current?.focusMeasurement(id),
   }))
 
   return <div className="viewer" ref={host} />

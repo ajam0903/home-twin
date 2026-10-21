@@ -7,7 +7,8 @@ import { buildHouse } from './buildHouse.js'
 // UVs (texture repeats baked in) and vertex colors. The dev server writes
 // maya/export/scene.json, scene.bin and textures/*.png, and
 // tools/maya/build_scene.py turns those into the Maya scene and the FBX.
-// The woods on the neighboring lots are left out: the app keeps drawing them.
+// The woods on the neighboring lots go in their own group, one object per tree;
+// the app loads them from a separate file (see tools/maya/home_twin.py).
 
 const GROUPS = (house) => [
   ['B', house.levelGroups.B],
@@ -70,11 +71,13 @@ export async function exportForMaya({ onStatus = () => {} } = {}) {
         ? Array.from({ length: o.count }, (_, i) => [o.userData.instanceParts?.[i], i])
         : [[o.userData.part, null]]
       for (const [part, instance] of list) {
-        // the woods group: only the named trees (the forest stays in the app)
+        // the woods group: the maples (trees) and the forest (woods); the
+        // leaf litter stays in the app
         if (!part && groupName === 'trees') continue
-        const name = part?.name ?? `${groupName}_misc`
-        const key = `${groupName}/${name}`
-        if (!parts.has(key)) parts.set(key, { group: groupName, name, kind: part?.kind ?? 'part', sources: [] })
+        const group = part?.kind === 'tree' ? 'woods' : groupName
+        const name = part?.name ?? `${group}_misc`
+        const key = `${group}/${name}`
+        if (!parts.has(key)) parts.set(key, { group, name, kind: part?.kind ?? 'part', sources: [] })
         parts.get(key).sources.push({ mesh: o, instance })
       }
     })

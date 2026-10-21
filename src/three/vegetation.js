@@ -125,7 +125,9 @@ export function thujaGeometry() {
 
 // Deciduous woods (mixed oak, maple and tulip poplar in the aerial photo,
 // mostly green with yellow, orange and red turning in October). Tall bare
-// trunks with a few limbs under a crown of clumps; instanced.
+// trunks with a few limbs under a crown of clumps; instanced. Every trunk,
+// limb and clump records its tree (`t`), so the Maya export can make one
+// object per tree: woods_tree_001... (understory included).
 export function buildForest(group, spots, gradeAt) {
   const rnd = seeded(77)
   const variants = [0, 1, 2].map((v) => clumpGeometry(low ? 2 : 3, v * 21.3, 1.15))
@@ -143,14 +145,14 @@ export function buildForest(group, spots, gradeAt) {
     return palette[0][0]
   }
   const color = new THREE.Color()
-  for (const [x, y, k] of spots) {
+  spots.forEach(([x, y, k], t) => {
     const g = gradeAt(y)
     const height = (34 + rnd() * 26) * k
     const crownBase = height * (0.45 + rnd() * 0.12)
     const crownR = (7 + rnd() * 5) * k
     const lean = new THREE.Vector3((rnd() - 0.5) * 0.12, 1, (rnd() - 0.5) * 0.12).normalize()
     const top = new THREE.Vector3(x, g, y).addScaledVector(lean, height * 0.85)
-    trunks.push({ a: new THREE.Vector3(x, g - 0.3, y), b: top, r: (0.55 + rnd() * 0.35) * k })
+    trunks.push({ a: new THREE.Vector3(x, g - 0.3, y), b: top, r: (0.55 + rnd() * 0.35) * k, t })
     const base = new THREE.Color(pick())
     const n = low ? 4 + Math.floor(rnd() * 2) : 6 + Math.floor(rnd() * 3)
     for (let i = 0; i < n; i++) {
@@ -163,11 +165,11 @@ export function buildForest(group, spots, gradeAt) {
       const s = crownR * (low ? 0.6 : 0.5 + rnd() * 0.25) // fewer clumps, each a bit larger
       // most clumps share the tree's color; a few turn early
       color.copy(rnd() < 0.15 ? new THREE.Color(pick()) : base).offsetHSL((rnd() - 0.5) * 0.02, 0, (rnd() - 0.5) * 0.05)
-      clumps[Math.floor(rnd() * 3)].push({ p: new THREE.Vector3(cx, cy, cz), s: new THREE.Vector3(s, s * (0.75 + rnd() * 0.2), s), rot: rnd() * 6.28, c: color.clone() })
+      clumps[Math.floor(rnd() * 3)].push({ p: new THREE.Vector3(cx, cy, cz), s: new THREE.Vector3(s, s * (0.75 + rnd() * 0.2), s), rot: rnd() * 6.28, c: color.clone(), t })
       // a limb from the trunk out to the lower clumps
       if (rise < 0.5) {
         const from = new THREE.Vector3(x, g, y).addScaledVector(lean, cy - g - s * 0.9)
-        limbs.push({ a: from, b: new THREE.Vector3(cx, cy - s * 0.3, cz), r: 0.22 * k })
+        limbs.push({ a: from, b: new THREE.Vector3(cx, cy - s * 0.3, cz), r: 0.22 * k, t })
       }
     }
     // Understory between the trunks: low shrubs, and now and then a sapling
@@ -179,7 +181,7 @@ export function buildForest(group, spots, gradeAt) {
       const uz = y + Math.sin(a) * d
       const r = 1.6 + rnd() * 2.2
       color.set(rnd() < 0.8 ? '#41602b' : '#8c7a32').offsetHSL(0, 0, (rnd() - 0.5) * 0.06)
-      clumps[i % 3].push({ p: new THREE.Vector3(ux, gradeAt(uz) + r * 0.55, uz), s: new THREE.Vector3(r, r * 0.8, r), rot: rnd() * 6.28, c: color.clone() })
+      clumps[i % 3].push({ p: new THREE.Vector3(ux, gradeAt(uz) + r * 0.55, uz), s: new THREE.Vector3(r, r * 0.8, r), rot: rnd() * 6.28, c: color.clone(), t })
     }
     if (rnd() < (low ? 0.25 : 0.55)) {
       const a = rnd() * Math.PI * 2
@@ -187,11 +189,17 @@ export function buildForest(group, spots, gradeAt) {
       const uz = y + Math.sin(a) * 5
       const gu = gradeAt(uz)
       const h = 10 + rnd() * 8
-      limbs.push({ a: new THREE.Vector3(ux, gu - 0.2, uz), b: new THREE.Vector3(ux, gu + h * 0.7, uz), r: 0.18 })
+      limbs.push({ a: new THREE.Vector3(ux, gu - 0.2, uz), b: new THREE.Vector3(ux, gu + h * 0.7, uz), r: 0.18, t })
       const r = 3 + rnd() * 2
       color.set(pick()).offsetHSL(0, 0, -0.03)
-      clumps[2].push({ p: new THREE.Vector3(ux, gu + h * 0.75, uz), s: new THREE.Vector3(r, r * 0.9, r), rot: rnd() * 6.28, c: color.clone() })
+      clumps[2].push({ p: new THREE.Vector3(ux, gu + h * 0.75, uz), s: new THREE.Vector3(r, r * 0.9, r), rot: rnd() * 6.28, c: color.clone(), t })
     }
+  })
+
+  const treeName = (t) => `woods_tree_${String(t + 1).padStart(3, '0')}`
+  const named = (im, list) => {
+    im.userData.forest = true
+    im.userData.instanceParts = list.map(({ t }) => ({ kind: 'tree', name: treeName(t) }))
   }
 
   const bark = new THREE.MeshStandardMaterial({ color: '#4f4238', roughness: 1 })
@@ -208,8 +216,11 @@ export function buildForest(group, spots, gradeAt) {
       m.compose(a, q, new THREE.Vector3(r, d.length(), r))
       im.setMatrixAt(i, m)
     })
-    im.castShadow = true
+    // the woods only receive shadows: the sun's shadow covers the lot, so a
+    // tree's shadow would end in a straight edge out on the lawn
+    im.castShadow = false
     im.receiveShadow = true
+    named(im, list)
     group.add(im)
   }
   sticks(trunks, bark)
@@ -224,8 +235,9 @@ export function buildForest(group, spots, gradeAt) {
       im.setMatrixAt(i, m)
       im.setColorAt(i, c)
     })
-    im.castShadow = true
+    im.castShadow = false
     im.receiveShadow = true
+    named(im, list)
     group.add(im)
   })
 }

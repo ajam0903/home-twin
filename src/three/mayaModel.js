@@ -1,14 +1,17 @@
 import * as THREE from 'three'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+import { LAWN_COLOR, ASPHALT_COLOR } from './buildHouse.js'
 
 // The house as edited in Maya: public/model/house.fbx, with per-material
-// settings in public/model/materials.json (see tools/maya/home_twin.py).
-// Returns null when there is no Maya model; the app then builds the house
-// from the plans as before.
+// settings in public/model/materials.json (see tools/maya/home_twin.py), and
+// the woods on the neighboring lots in woods.fbx (woods_phone.fbx, a reduced
+// copy, on phones). Returns null when there is no Maya model; the app then
+// builds the house from the plans as before. Without a woods file the app
+// keeps generating the woods.
 
 const BASE = `${import.meta.env.BASE_URL}model/`
 
-export async function loadMayaModel() {
+export async function loadMayaModel({ phone = false } = {}) {
   let extras
   try {
     const res = await fetch(`${BASE}materials.json`, { cache: 'no-cache' })
@@ -17,8 +20,11 @@ export async function loadMayaModel() {
   } catch {
     return null
   }
-  const fbx = await new FBXLoader().loadAsync(`${BASE}house.fbx`)
-  return { fbx, extras }
+  const loader = new FBXLoader()
+  // a missing file comes back as the app's HTML page, which fails to parse
+  const optional = (file) => loader.loadAsync(`${BASE}${file}`).catch(() => null)
+  const [fbx, woods] = await Promise.all([loader.loadAsync(`${BASE}house.fbx`), optional(phone ? 'woods_phone.fbx' : 'woods.fbx')])
+  return { fbx, woods, extras }
 }
 
 const bumpCache = new Map()
@@ -36,17 +42,23 @@ function bumpTexture(name) {
 // its conversion so colors match what Maya shows.
 const toLinearAsIs = (c) => c.convertLinearToSRGB()
 
+// Surfaces drawn in one flat color even when the Maya material has a texture
+// (the lawn and asphalt textures showed their tiling)
+const FLAT_COLORS = { mat_grass: LAWN_COLOR, mat_asphalt: ASPHALT_COLOR }
+
 // A standard material for the app (shadows, the cutaway plane, roughness and
 // bump from materials.json) in place of the FBX loader's Phong/Lambert.
 export function appMaterial(m, extras, clipPlane) {
   const x = extras[m.name] ?? extras[m.name.replace(/\d+$/, '')] ?? {}
-  if (m.map) m.map.anisotropy = 8
+  const flat = FLAT_COLORS[m.name] ?? FLAT_COLORS[m.name.replace(/\d+$/, '')]
+  const map = flat ? null : (m.map ?? null)
+  if (map) map.anisotropy = 8
   // a texture carries its own color; otherwise the shader color from Maya
-  const color = m.map ? new THREE.Color(1, 1, 1) : toLinearAsIs(m.color.clone())
+  const color = flat ? new THREE.Color(flat) : map ? new THREE.Color(1, 1, 1) : toLinearAsIs(m.color.clone())
   return new THREE.MeshStandardMaterial({
     name: m.name,
     color,
-    map: m.map ?? null,
+    map,
     vertexColors: m.vertexColors || !!x.vertexColors,
     roughness: x.roughness ?? 0.85,
     metalness: x.metalness ?? 0,

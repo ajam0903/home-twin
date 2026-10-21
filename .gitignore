@@ -8,3 +8,6 @@ maya/export/
 # The Maya scene is the editing source but stays local (large binary);
 # rebuild it with ?export=maya and npm run maya:build
 maya/house.mb
+maya/export_prev/
+maya/backups/
+.mayaSwatches/

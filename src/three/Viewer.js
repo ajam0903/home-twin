@@ -9,6 +9,7 @@ import { buildHouse } from './buildHouse.js'
 import { buildFurniturePiece } from './furniture.js'
 import { moveFurniture } from '../model/furniture.js'
 import { loadMayaModel, appMaterial, fixVertexColors } from './mayaModel.js'
+import { Measure } from './measure.js'
 import {
   ROOMS, ITEMS, SITE, levelById, roomById, itemById, roomFloor, roomLabelPoint, polyArea, gradeAt,
 } from '../model/house.js'
@@ -29,10 +30,12 @@ const LEVEL_FRAME = {
 const CATEGORY_GLYPH = { HVAC: 'H', Plumbing: 'P', Electrical: 'E', Safety: 'S', Structure: 'B', Appliances: 'A', Site: 'L', Landscape: 'T', Drainage: 'D' }
 
 export class Viewer {
-  constructor(container, { onSelect, onFurnitureMove } = {}) {
+  constructor(container, { onSelect, onFurnitureMove, onMeasurementSave, onMeasurementRemove } = {}) {
     this.container = container
     this.onSelect = onSelect
     this.onFurnitureMove = onFurnitureMove
+    this.onMeasurementSave = onMeasurementSave
+    this.onMeasurementRemove = onMeasurementRemove
     this.furniture = []
     this.furnitureGroups = new Map()
     this.furnitureMats = new Map()
@@ -56,6 +59,9 @@ export class Viewer {
 
     const labels = new CSS2DRenderer()
     labels.domElement.className = 'label-layer'
+    // clip instead of hidden: a focused button on a label near the edge
+    // would otherwise scroll the layer and shift every label
+    labels.domElement.style.overflow = 'clip'
     container.appendChild(labels.domElement)
     this.labelRenderer = labels
 
@@ -137,12 +143,15 @@ export class Viewer {
     this.controls = controls
 
     this.buildLabels()
+    this.measure = new Measure(this)
+    this.measure.setResolution(container.clientWidth || 1, container.clientHeight || 1)
+    this.measuring = false
     this.attachPicking()
 
     // The Maya model, when there is one, replaces the house built from the plans
     // (open the app with ?model=plans to see the generated house instead)
     const usePlans = new URLSearchParams(window.location.search).get('model') === 'plans'
-    ;(usePlans ? Promise.resolve(null) : loadMayaModel())
+    ;(usePlans ? Promise.resolve(null) : loadMayaModel({ phone: !highQuality }))
       .then((model) => {
         if (model && !this.disposed) this.useMayaModel(model)
       })
@@ -276,7 +285,7 @@ export class Viewer {
     }
     const showPins = this.showPins !== false
     for (const l of this.roomLabels) {
-      l.visible = l.userData.level === this.mode
+      l.visible = l.userData.level === this.mode || (this.mode === 'exterior' && !!roomById[l.userData.id]?.outdoor)
       l.element.classList.toggle('active', this.selection?.kind === 'room' && this.selection.id === l.userData.id)
     }
     for (const p of this.itemPins) {
@@ -287,6 +296,7 @@ export class Viewer {
       r.highlight.visible = this.selection?.kind === 'room' && this.selection.id === r.id
     }
     this.updateFurnitureOutline()
+    this.measure?.updateVisibility()
     this.dirty = true
   }
 
@@ -297,7 +307,8 @@ export class Viewer {
         selection.kind === 'room' ? roomById[selection.id]?.level
         : selection.kind === 'furniture' ? this.furnitureLevel(selection.id)
         : itemById[selection.id]?.level
-      if (level && modeOf(level) !== this.mode) {
+      const stayOutside = this.mode === 'exterior' && selection.kind === 'room' && roomById[selection.id]?.outdoor
+      if (level && modeOf(level) !== this.mode && !stayOutside) {
         this.mode = modeOf(level)
       }
     }
@@ -306,12 +317,40 @@ export class Viewer {
     if (selection && fly && selection.kind !== 'furniture') this.frameSelection()
   }
 
+  // ------------------------------------------------------------ measuring
+
+  // Tape measure mode: clicks place measuring points instead of selecting.
+  // Turning it off clears the unsaved measurements.
+  setMeasureMode(on) {
+    if (on === this.measuring) return
+    this.measuring = on
+    if (!on) this.measure.clear()
+    this.renderer.domElement.classList.toggle('measuring', on)
+    this.dirty = true
+  }
+
+  // Saved measurements from the app (each shows in the view it was taken in)
+  setSavedMeasurements(list) {
+    this.measure.setSaved(list)
+  }
+
+  // Frame a saved measurement (the app switches to its view first)
+  focusMeasurement(id) {
+    const e = this.measure.find(id)
+    if (!e) return
+    this.measure.open(e)
+    const center = e.a.clone().add(e.b).multiplyScalar(0.5)
+    const radius = e.a.distanceTo(e.b) * 0.7 + 6
+    const pos = center.clone().addScaledVector(this.viewDir(0.6), this.viewDistance(radius))
+    this.flyTo(pos, center, true)
+  }
+
   // ------------------------------------------------------------ Maya model
 
   // Swap the generated geometry for the FBX from Maya. Its top groups match the
   // app's: B, L1, L2 (cut away floor by floor), roof, site, utilities, trees.
   // The forest on the neighboring lots stays generated.
-  useMayaModel({ fbx, extras }) {
+  useMayaModel({ fbx, woods, extras }) {
     const h = this.house
     const targets = {
       B: [h.levelGroups.B, 'B'],
@@ -379,6 +418,26 @@ export class Viewer {
       r.highlight = hl
     }
     if (roomMeshes.length) h.roomMeshes = roomMeshes
+
+    // The woods from Maya replace the generated forest (the leaf litter stays)
+    if (woods) {
+      for (const o of h.woodsGroup.children.filter((c) => c.userData.forest)) {
+        h.woodsGroup.remove(o)
+        o.geometry?.dispose()
+      }
+      woods.updateMatrixWorld(true)
+      const trees = []
+      woods.traverse((o) => o.isMesh && trees.push(o))
+      for (const o of trees) {
+        fixVertexColors(o.geometry)
+        o.material = Array.isArray(o.material) ? o.material.map((m) => material(m, null)) : material(o.material, null)
+        // receive only, like the generated woods (see buildForest)
+        o.castShadow = false
+        o.receiveShadow = true
+        o.matrixWorld.decompose(o.position, o.quaternion, o.scale)
+        h.woodsGroup.add(o)
+      }
+    }
     this.usingMaya = true
     this.setFurniture(this.furniture, this.showFurniture)
     this.applyMode()
@@ -544,6 +603,10 @@ export class Viewer {
 
   attachPicking() {
     const el = this.renderer.domElement
+    this.onKey = (e) => {
+      if (e.key === 'Escape' && this.measuring) this.measure.cancel()
+    }
+    window.addEventListener('keydown', this.onKey)
     const ray = new THREE.Raycaster()
     const ndc = new THREE.Vector2()
     const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -564,14 +627,17 @@ export class Viewer {
     let down = null
     let drag = null
 
-    // Capture phase, so pressing on furniture drags it instead of orbiting the camera
+    // Capture phase, so pressing on the selected piece of furniture drags it
+    // instead of orbiting the camera. Any other piece only gets selected (on
+    // click), so moving around the view never moves furniture by accident.
     el.addEventListener(
       'pointerdown',
       (e) => {
         down = { x: e.clientX, y: e.clientY }
+        if (this.measuring) return // measuring: no furniture dragging
         aim(e)
         const id = furnitureUnder()
-        if (!id) return
+        if (!id || !(this.selection?.kind === 'furniture' && this.selection.id === id)) return
         const g = this.furnitureGroups.get(id)
         floorPlane.constant = -levelById[this.mode].floor
         if (!ray.ray.intersectPlane(floorPlane, point)) return
@@ -581,7 +647,25 @@ export class Viewer {
       },
       { capture: true },
     )
+    // live measuring line, at most once a frame
+    let hoverEvent = null
     el.addEventListener('pointermove', (e) => {
+      if (!drag && e.pointerType === 'mouse' && !e.buttons) {
+        if (!hoverEvent) {
+          requestAnimationFrame(() => {
+            const ev = hoverEvent
+            hoverEvent = null
+            const rect = el.getBoundingClientRect()
+            // a saved measurement's line can be clicked
+            const overLine = !(this.measuring && this.measure.first) && this.measure.lineAt(ev.clientX - rect.left, ev.clientY - rect.top, rect)
+            el.style.cursor = overLine ? 'pointer' : ''
+            if (!this.measuring) return
+            const ndcAt = new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1)
+            this.measure.hover(ndcAt, rect, ev.shiftKey)
+          })
+        }
+        hoverEvent = e
+      }
       if (!drag) return
       if (!drag.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 4) return
       aim(e)
@@ -609,8 +693,31 @@ export class Viewer {
       if (!down) return
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y)
       down = null
-      if (moved > 6 || this.mode === 'exterior') return
+      if (moved > 6) return
+      // a saved measurement's thin line opens it (unless a measurement is
+      // half placed); any other click closes the open one
+      if (!(this.measuring && this.measure.first)) {
+        const rect = el.getBoundingClientRect()
+        const line = this.measure.lineAt(e.clientX - rect.left, e.clientY - rect.top, rect)
+        if (line) {
+          this.measure.open(line)
+          return
+        }
+        this.measure.close()
+      }
+      if (this.measuring) {
+        aim(e)
+        this.measure.click(ndc, el.getBoundingClientRect(), e.shiftKey)
+        return
+      }
+      if (this.mode === 'exterior') return
       aim(e)
+      // a click on furniture selects it (then it can be dragged)
+      const piece = furnitureUnder()
+      if (piece) {
+        this.onSelect?.({ kind: 'furniture', id: piece })
+        return
+      }
       const targets = this.house.roomMeshes.filter((r) => r.level === this.mode).map((r) => r.floor)
       const hit = ray.intersectObjects(targets, false)[0]
       this.onSelect?.(hit ? { kind: 'room', id: hit.object.userData.id } : null)
@@ -635,6 +742,7 @@ export class Viewer {
     else this.camera.clearViewOffset()
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(w, h)
+    this.measure?.setResolution(w, h)
     if (this.composer) {
       this.composer.setPixelRatio(this.renderer.getPixelRatio())
       this.composer.setSize(w, h)
@@ -645,6 +753,7 @@ export class Viewer {
 
   dispose() {
     this.disposed = true
+    window.removeEventListener('keydown', this.onKey)
     cancelAnimationFrame(this.raf)
     this.resizeObserver.disconnect()
     this.controls.dispose()

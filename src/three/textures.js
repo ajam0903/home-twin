@@ -205,26 +205,6 @@ function single(canvas, feet, anisotropy) {
   return t
 }
 
-// Mown lawn: mottled greens with fine blade speckle and a few dry patches.
-// Tile: 12'.
-export function grassTexture(anisotropy) {
-  const c = noiseCanvas(512, (big, mid, fine, n) => {
-    const k = 0.82 + big * 0.22 + mid * 0.12 + fine * 0.08 + (n - 0.5) * 0.16
-    const dry = Math.max(0, big * mid - 0.42) * 1.6
-    return [(118 + dry * 60) * k, (156 + dry * 20) * k, (96 - dry * 10) * k]
-  })
-  return single(c, 12, anisotropy)
-}
-
-// Driveway asphalt: dark gray aggregate. Tile: 6'.
-export function asphaltTexture(anisotropy) {
-  const c = noiseCanvas(256, (big, mid, fine, n) => {
-    const k = 72 + big * 10 + mid * 8 + (n - 0.5) * 34 + (n > 0.97 ? 40 : 0)
-    return [k, k + 1, k + 4]
-  })
-  return single(c, 6, anisotropy)
-}
-
 // Broom-finished concrete walk with control joints every 4'. Tile: 4'.
 export function concreteTexture(anisotropy) {
   const size = 256

@@ -8,6 +8,8 @@ import Blueprints from './components/Blueprints.jsx'
 import { Icon } from './components/Icons.jsx'
 import { HOME, levelName, roomById, itemById, roomLabelPoint } from './model/house.js'
 import { loadFurniture, saveFurniture, settleFurniture } from './model/furniture.js'
+import { loadNotes, saveNotes } from './model/notes.js'
+import { loadMeasurements, saveMeasurements } from './model/measurements.js'
 
 function useMediaQuery(q) {
   const [match, setMatch] = useState(() => window.matchMedia(q).matches)
@@ -36,9 +38,46 @@ export default function App() {
   const [sheetTab, setSheetTab] = useState('rooms')
   const [furniture, setFurniture] = useState(loadFurniture)
   const [showFurniture, setShowFurniture] = useState(true)
+  const [measure, setMeasure] = useState(false)
   const viewer = useRef(null)
 
   useEffect(() => saveFurniture(furniture), [furniture])
+
+  // Measurements the owner saved (each in the view it was taken in), saved in this browser
+  const [measurements, setMeasurements] = useState(loadMeasurements)
+  useEffect(() => saveMeasurements(measurements), [measurements])
+  const saveMeasurement = useCallback(
+    // a new one, or new end points for a saved one (dragged in the view)
+    (m) =>
+      setMeasurements((list) =>
+        list.some((x) => x.id === m.id) ? list.map((x) => (x.id === m.id ? { ...x, a: m.a, b: m.b } : x)) : [...list, { ...m, name: '' }],
+      ),
+    [],
+  )
+  const removeMeasurement = useCallback((id) => setMeasurements((list) => list.filter((m) => m.id !== id)), [])
+  const renameMeasurement = (id, name) => setMeasurements((list) => list.map((m) => (m.id === id ? { ...m, name } : m)))
+  const focusMeasurement = (m) => {
+    if (m.view !== level) setLevel(m.view)
+    setTimeout(() => viewer.current?.focusMeasurement(m.id), 60)
+  }
+  const measureProps = {
+    measurements: measurements.filter((m) => m.view === level),
+    onRenameMeasurement: renameMeasurement,
+    onRemoveMeasurement: removeMeasurement,
+    onFocusMeasurement: focusMeasurement,
+  }
+
+  // The owner's notes by room, saved in this browser
+  const [notes, setNotes] = useState(loadNotes)
+  useEffect(() => saveNotes(notes), [notes])
+  const setNote = useCallback((key, text) => {
+    setNotes((all) => {
+      const next = { ...all }
+      if (text.trim()) next[key] = text
+      else delete next[key]
+      return next
+    })
+  }, [])
 
   const levelOf = (sel) =>
     sel?.kind === 'room' ? roomById[sel.id]?.level
@@ -56,10 +95,12 @@ export default function App() {
     (sel) => {
       setSelection(sel)
       const l = levelOf(sel)
-      if (l) setLevel(modeOf(l))
+      // an outdoor room (the deck) picked from outside keeps the whole-house view
+      const stayOutside = level === 'exterior' && sel?.kind === 'room' && roomById[sel.id]?.outdoor
+      if (l && !stayOutside) setLevel(modeOf(l))
       if (sel && !desktop) setSheet((s) => (s === 'full' ? 'full' : 'half'))
     },
-    [desktop, furniture],
+    [desktop, furniture, level],
   )
 
   const addFurniture = (preset, lvl) => {
@@ -115,6 +156,16 @@ export default function App() {
         <Icon.sofa />
         <span>Furniture</span>
       </button>
+      <button
+        type="button"
+        className={'tool' + (measure ? ' on' : '')}
+        onClick={() => setMeasure((m) => !m)}
+        title="Measure: pick two points"
+        aria-pressed={measure}
+      >
+        <Icon.ruler />
+        <span>Measure</span>
+      </button>
     </div>
   )
 
@@ -134,11 +185,16 @@ export default function App() {
       furniture={furniture}
       showFurniture={showFurniture}
       onFurnitureMove={moveFurniture}
+      measure={measure}
+      savedMeasurements={measurements}
+      onMeasurementSave={saveMeasurement}
+      onMeasurementRemove={removeMeasurement}
     />
   )
 
   const hint =
-    level === 'exterior' ? 'Pick a floor to look inside'
+    measure ? (desktop ? 'Click two points to measure · drag a point to adjust · Shift: one axis · Esc: cancel' : 'Tap two points to measure · drag a point to adjust')
+    : level === 'exterior' ? 'Pick a floor to look inside'
     : selection?.kind === 'furniture' ? 'Drag the piece to move it'
     : selection ? null
     : 'Tap a room or a pin for details'
@@ -176,7 +232,7 @@ export default function App() {
           <>
             <aside className="sidebar">
               <LevelPicker value={level} onChange={changeLevel} vertical />
-              <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} />
+              <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} notes={notes} />
             </aside>
             <main className="stage">
               {viewerEl}
@@ -192,6 +248,9 @@ export default function App() {
                 furniture={furniture}
                 onFurnitureChange={updateFurniture}
                 onFurnitureDelete={removeFurniture}
+                notes={notes}
+                onNoteChange={setNote}
+                {...measureProps}
               />
             </aside>
           </>
@@ -271,6 +330,8 @@ export default function App() {
                 furniture={furniture}
                 onFurnitureChange={updateFurniture}
                 onFurnitureDelete={removeFurniture}
+                notes={notes}
+                onNoteChange={setNote}
               />
             ) : (
               <>
@@ -283,9 +344,9 @@ export default function App() {
                   </button>
                 </div>
                 {sheetTab === 'rooms' ? (
-                  <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} />
+                  <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} notes={notes} />
                 ) : (
-                  <DetailPanel selection={null} onSelect={select} level={level} furniture={furniture} />
+                  <DetailPanel selection={null} onSelect={select} level={level} furniture={furniture} {...measureProps} />
                 )}
               </>
             )}

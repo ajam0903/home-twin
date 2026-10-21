@@ -1131,3 +1131,174 @@ details.collapsible[open] summary {
   font-size: 13px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
 }
+
+/* Measure tool */
+.viewer canvas.measuring {
+  cursor: crosshair;
+}
+.measure-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff8a1f;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.measure-dot.snapped {
+  border-radius: 2px;
+}
+/* the points of a finished measurement can be dragged (a bigger touch area) */
+.measure-dot.handle {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.measure-dot.handle::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+.measure-dot.dragging {
+  cursor: grabbing;
+  box-shadow: 0 0 0 4px rgba(255, 138, 31, 0.35);
+}
+.measure-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 6px 6px 9px;
+  border-radius: 8px;
+  background: #ff8a1f;
+  color: #1d1205;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.measure-label.saved {
+  background: #fff7ef;
+  border: 2px solid #ff8a1f;
+}
+.measure-label.live {
+  opacity: 0.85;
+  pointer-events: none;
+}
+/* the length in feet and inches, stacked over the total inches */
+.ml-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.ml-name {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+}
+.ml-text strong {
+  font-size: 14px;
+}
+.ml-text em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+.ml-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.measure-save {
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: #1d1205;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.measure-remove {
+  border: 0;
+  background: rgba(0, 0, 0, 0.15);
+  color: inherit;
+  width: 20px;
+  height: 20px;
+  align-self: flex-end;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* The owner's notes on a room */
+.my-notes textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 72px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.my-notes textarea:focus {
+  outline: 2px solid #ff8a1f;
+  outline-offset: -1px;
+}
+.my-notes .muted {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.note-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #ff8a1f;
+  vertical-align: middle;
+}
+
+/* Saved measurements list in the overview panel */
+.saved-measures {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.saved-measures li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.saved-measures input {
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.saved-measures .link {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.saved-measures .link span {
+  font-weight: 400;
+  opacity: 0.75;
+  margin-left: 4px;
+}

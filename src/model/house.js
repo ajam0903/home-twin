@@ -237,6 +237,29 @@ function opening(at, w, label, h = 6.67) {
 
 const W = 36.17 // main house width (36'-2")
 
+// Basement finished in 2017 (owner's permit sketch, released 3-29-17). The
+// sketch is drawn with the front of the house at the top and is not to scale;
+// positions come from it, anchored on the stair, the girder line and the
+// mechanicals the 2001 foundation plan already locates. Walls are galvanized
+// metal studs at 16" o.c. with 1/2" drywall and R-13; ceilings are drywall.
+// The basement under the study wing (the plans' optional foundation) holds a
+// bath and unfinished storage.
+const BSMT = {
+  girderY: 15.2, // dividing walls follow the drop girder and its lally columns
+  officeX: 18.75, // the open area | the finished room
+  closetX: 19.25, // the closet under the stair, TV room side
+  utilityX: 7.0, // the finished room | the utility room and its closet
+  utilityY: 4.6, // the utility room | the closet behind it
+  waterX: 25.3, // the water service closet in the right front corner
+  waterY: 28.9,
+  wingX: 50.5, // foundation under the study wing (extent estimated)
+  wingY0: 3,
+  wingY1: 14,
+  bathX: 44.7, // the bath's left wall, in the wing
+  bathY: 7.75, // the bath | the storage behind it
+  ceiling: 'Drywall ceiling below the joists (8\'-0" to the joists)',
+}
+
 // Main stair (sheets 2 and 3): 3'-0" wide against the living room wall, up
 // toward the rear: 10 treads to a 3'-0" landing, then 3 treads turning toward
 // the kitchen side, arriving on the second floor at x 19. The basement stair
@@ -272,19 +295,123 @@ export const ROOMS = [
   {
     id: 'basement',
     level: 'B',
-    name: 'Basement',
-    type: 'basement',
-    poly: rect(0, 0, W, D),
-    labelAt: [25, 22],
-    dims: '35\'-2" x 31\'-0" (open)',
-    ceiling: "8'-0\"",
+    name: 'Open area',
+    subtitle: 'Finished basement',
+    type: 'living',
+    flooring: 'carpet',
+    poly: rect(BSMT.officeX, 0, W, BSMT.girderY),
+    dims: '17\'-0" x 14\'-8"',
+    ceiling: BSMT.ceiling,
     notes: [
-      '4" concrete slab, 6 mil vapor barrier on 4" gravel',
-      '12" CMU foundation walls on 24" x 10" continuous concrete footing',
+      'Half wall along the girder line to the TV room',
+      'Sump pit in the right rear corner; doors through the foundation wall to the bath and the storage under the study',
+      '4" concrete slab, 6 mil vapor barrier on 4" gravel; 12" CMU foundation walls',
       '(2) 2x10 Microlam drop girder on 4" lally columns at about 5\'-9" o.c.',
       'Waterproofing below grade, 4" interior perimeter drain to sump pit',
-      'The plans call for washer / dryer hook-ups here with the optional study; the laundry is on the first floor',
     ],
+  },
+  {
+    id: 'tvroom',
+    level: 'B',
+    name: 'TV room',
+    subtitle: 'Finished basement',
+    type: 'living',
+    flooring: 'carpet',
+    poly: [
+      [BSMT.closetX, BSMT.girderY], [W, BSMT.girderY], [W, BSMT.waterY], [BSMT.waterX, BSMT.waterY], [BSMT.waterX, D],
+      [STAIR.x0, D], [STAIR.x0, STAIR.bBottomY], [STAIR.x1, STAIR.bBottomY], [STAIR.x1, STAIR.landY1], [BSMT.closetX, STAIR.landY1],
+    ],
+    labelAt: [27, 22],
+    dims: 'about 19\' x 16\'',
+    ceiling: BSMT.ceiling,
+    notes: ['Open to the area behind it over a half wall', 'The stair comes down along its left side', 'Smoke detector at the foot of the stair'],
+  },
+  {
+    id: 'gym',
+    level: 'B',
+    name: 'Gym',
+    subtitle: 'Finished basement',
+    type: 'living',
+    flooring: 'carpet',
+    poly: rect(0, BSMT.girderY, STAIR.x0, D),
+    dims: '13\'-0" x 16\'-3"',
+    ceiling: BSMT.ceiling,
+    notes: ['Door to the utility room', 'Reached past the foot of the stair from the TV room'],
+  },
+  {
+    id: 'bonusroom',
+    level: 'B',
+    name: 'Finished room',
+    subtitle: 'Finished basement',
+    type: 'living',
+    flooring: 'carpet',
+    poly: rect(BSMT.utilityX, 0, BSMT.officeX, BSMT.girderY),
+    dims: '11\'-2" x 14\'-8"',
+    ceiling: BSMT.ceiling,
+    notes: ['Door from the open area', 'Door to the closet in the corner'],
+  },
+  {
+    id: 'utility',
+    level: 'B',
+    name: 'Utility room',
+    type: 'basement',
+    poly: rect(0, BSMT.utilityY, BSMT.utilityX, BSMT.girderY),
+    dims: '6\'-6" x 10\'-1"',
+    ceiling: BSMT.ceiling,
+    notes: ['Furnace and hot water heater', 'Electric panel on the left foundation wall', 'Wall vent to the gym; door from the gym'],
+  },
+  {
+    id: 'bcloset',
+    level: 'B',
+    name: 'Closet',
+    subtitle: 'Basement, left rear corner',
+    type: 'closet',
+    flooring: 'carpet',
+    poly: rect(0, 0, BSMT.utilityX, BSMT.utilityY),
+    ceiling: BSMT.ceiling,
+    notes: ['Door from the finished room'],
+  },
+  {
+    id: 'stairclos',
+    level: 'B',
+    name: 'Closet',
+    subtitle: 'Under the stair',
+    type: 'closet',
+    flooring: 'carpet',
+    poly: rect(STAIR.x0, BSMT.girderY, BSMT.closetX, STAIR.landY1),
+    ceiling: 'Under the stair',
+    notes: ['Door from the TV room'],
+  },
+  {
+    id: 'watercloset',
+    level: 'B',
+    name: 'Water service',
+    subtitle: 'Basement, right front corner',
+    type: 'basement',
+    poly: rect(BSMT.waterX, BSMT.waterY, W, D),
+    ceiling: BSMT.ceiling,
+    notes: ['Water service and the main drain enter here from the street', 'Door from the TV room'],
+  },
+  {
+    id: 'bbath',
+    level: 'B',
+    name: 'Bath',
+    subtitle: 'Basement, under the study wing',
+    type: 'bath',
+    poly: rect(W, BSMT.bathY, BSMT.bathX, BSMT.wingY1),
+    dims: 'about 8\'-6" x 6\'-3"',
+    ceiling: BSMT.ceiling,
+    notes: ['Shower, toilet and sink', 'Exhaust fan', 'Door through the foundation wall from the open area'],
+  },
+  {
+    id: 'bstorage',
+    level: 'B',
+    name: 'Unfinished storage',
+    subtitle: 'Under the study wing',
+    type: 'basement',
+    poly: [[W, BSMT.wingY0], [BSMT.wingX, BSMT.wingY0], [BSMT.wingX, BSMT.wingY1], [BSMT.bathX, BSMT.wingY1], [BSMT.bathX, BSMT.bathY], [W, BSMT.bathY]],
+    ceiling: 'Open to the floor joists',
+    notes: ['Left unfinished in the 2017 renovation', 'Door through the foundation wall from the open area'],
   },
 
   // First floor, main house
@@ -419,6 +546,9 @@ export const ROOMS = [
     name: 'Deck',
     subtitle: 'Backyard, built 2020',
     type: 'deck',
+    // outside: its label shows in the whole-house view, which it stays in when
+    // picked there, and the whole-house list puts it with the property
+    outdoor: true,
     floor: DECK.top,
     poly: DECK_POLY,
     labelAt: [18, -11],
@@ -434,6 +564,26 @@ export const ROOMS = [
       `Stair: 7 treads down to the lawn (the plans show a 1' x 4' concrete pad; there is none), riser lights`,
       'Lattice skirt in brown frame panels, with a lattice door on the stair side',
       'Design loads: 50 PSF live, 10 PSF dead, 115 mph wind',
+    ],
+    // The deck's parts, each with its full notes, in one listing
+    sections: [
+      { title: 'Posts & helical piers', details: [
+        'Seven 6x6 PT posts (ground-contact rated, MCA .23) on Goliath Tech helical piles',
+        `Support plate MHC1161-3B post cap, 10" helix, 3'-0" minimum depth`,
+        'Required loads: #1 246 lb, #2 2,992, #3 3,638, #4 2,880, #5 2,155, #6 2,880, #7 2,155',
+        `Installer field report records each pile's depth, torque and bearing capacity`,
+      ] },
+      { title: 'Ledger', details: [
+        'Bolted to the house rim joist with 3 5/8" LedgerLOK fasteners, staggered',
+        'Simpson DTT1Z-KT tension ties at 4 places, one within 24" of each end',
+        'Joist hangers: Simpson LUS26S; flashing and counter flashing behind the siding',
+      ] },
+      { title: 'Lighting', details: ['Post cap lights on 10 rail posts', 'Riser lights on the 7 stair risers'] },
+      { title: 'Door to the under-deck space', details: [
+        'Lattice door in the skirt on the stair side, between the bottom of the stair and the outer corner',
+        'Black hinges on the corner side, latch on the stair side',
+        'The deck plan shows a gate on the far side; the photo shows it here',
+      ] },
     ],
   },
 
@@ -695,10 +845,47 @@ export const WALLS = [
   // Basement foundation, 12" CMU
   ...[
     [[0, 0], [W, 0], [win('2813', 14.1, { head: 8.2 }), win('2813', 30.6, { head: 8.2 })]],
-    [[W, 0], [W, D], []],
+    [[W, 0], [W, D], [
+      door(4.9, 2.67, 'Door through the foundation wall to the storage under the study', { style: 'interior' }),
+      door(9.6, 2.67, 'Door through the foundation wall to the bath', { style: 'interior' }),
+    ]],
     [[0, D], [W, D], []],
     [[0, 0], [0, D], [win('2813', 24.7, { head: 8.2 })]],
+    // under the study wing
+    [[W, BSMT.wingY0], [BSMT.wingX, BSMT.wingY0], []],
+    [[BSMT.wingX, BSMT.wingY0], [BSMT.wingX, BSMT.wingY1], []],
+    [[W, BSMT.wingY1], [BSMT.wingX, BSMT.wingY1], []],
   ].map(([a, b, openings]) => ({ level: 'B', a, b, t: 1, ext: true, kind: 'foundation', h: 8.4, openings })),
+
+  // Basement finished in 2017: metal-stud walls (see BSMT)
+  {
+    level: 'B', a: [0, BSMT.girderY], b: [BSMT.closetX, BSMT.girderY], t: INT,
+    openings: [door(2.4, 2.67, 'Door from the gym to the utility room', { style: 'interior' })],
+  },
+  { level: 'B', a: [BSMT.closetX, BSMT.girderY], b: [W, BSMT.girderY], t: INT, kind: 'knee', h: 3.5 },
+  { level: 'B', a: [STAIR.x0, BSMT.girderY], b: [STAIR.x0, STAIR.bBottomY], t: INT },
+  { level: 'B', a: [STAIR.x1, STAIR.landY1], b: [STAIR.x1, STAIR.bBottomY], t: INT },
+  { level: 'B', a: [STAIR.x1, STAIR.landY1], b: [BSMT.closetX, STAIR.landY1], t: INT },
+  {
+    level: 'B', a: [BSMT.closetX, BSMT.girderY], b: [BSMT.closetX, STAIR.landY1], t: INT,
+    openings: [door(17.0, 2, 'Closet door', { style: 'interior' })],
+  },
+  {
+    level: 'B', a: [BSMT.officeX, 0], b: [BSMT.officeX, BSMT.girderY], t: INT,
+    openings: [door(12.2, 2.67, 'Door from the open area', { style: 'interior' })],
+  },
+  {
+    level: 'B', a: [BSMT.utilityX, 0], b: [BSMT.utilityX, BSMT.girderY], t: INT,
+    openings: [door(2.3, 2.5, 'Closet door', { style: 'interior' })],
+  },
+  { level: 'B', a: [0, BSMT.utilityY], b: [BSMT.utilityX, BSMT.utilityY], t: INT },
+  { level: 'B', a: [BSMT.waterX, BSMT.waterY], b: [W, BSMT.waterY], t: INT },
+  {
+    level: 'B', a: [BSMT.waterX, BSMT.waterY], b: [BSMT.waterX, D], t: INT,
+    openings: [door(30.2, 2, 'Door to the water service', { style: 'interior' })],
+  },
+  { level: 'B', a: [BSMT.bathX, BSMT.bathY], b: [BSMT.bathX, BSMT.wingY1], t: INT },
+  { level: 'B', a: [W, BSMT.bathY], b: [BSMT.bathX, BSMT.bathY], t: INT },
 
   // First floor, main house exterior
   {
@@ -882,6 +1069,12 @@ export const FIXTURES = [
   { level: 'B', x0: 2.6, y0: 8.2, x1: 5.2, y1: 10.4, z0: 0, z1: 5, color: '#9aa3ad', name: 'Furnace' },
   { level: 'B', shape: 'cyl', x: 3.9, y: 6.2, r: 0.95, z0: 0, z1: 5, color: '#c9ced4', name: 'Hot water heater' },
   { level: 'B', shape: 'cyl', x: 33.2, y: 3.9, r: 0.9, z0: 0, z1: 0.1, color: '#4c5560', name: 'Sump pit' },
+  // Basement bath (2017): shower against the bath's left wall, toilet and sink
+  // along the front wall
+  { level: 'B', x0: 42.0, y0: 8.2, x1: 44.45, y1: 12.9, z0: 0, z1: 0.3, color: '#dfe6ec', name: 'Shower' },
+  { level: 'B', x0: 41.95, y0: 8.2, x1: 42.05, y1: 12.9, z0: 0.3, z1: 6.5, color: '#bcd3e3', glass: true },
+  { level: 'B', x0: 39.6, y0: 12.0, x1: 40.9, y1: 13.45, z0: 0, z1: 1.3, color: '#f4f5f6', name: 'Toilet' },
+  { level: 'B', x0: 36.75, y0: 12.0, x1: 38.95, y1: 13.45, z0: 0, z1: 2.8, color: '#e9e4da', top: '#f4f5f6', name: 'Bath sink' },
 
   // Kitchen, from photos (Oct 2026): honey oak cabinets, black granite, stainless
   // appliances. Window wall: base run with the sink under the window and the
@@ -949,15 +1142,36 @@ export const FIXTURES = [
 export const ITEMS = [
   {
     id: 'furnace', level: 'B', at: [3.9, 9.3], z: 5.5, category: 'HVAC', name: 'Furnace',
-    details: ['Basement, left rear corner next to the water heater', 'Ducts run between 2x10 floor joists at 16" o.c.'],
+    details: ['Utility room, basement, next to the water heater', 'Ducts run between 2x10 floor joists at 16" o.c.'],
   },
   {
     id: 'waterheater', level: 'B', at: [3.9, 6.2], z: 5.5, category: 'Plumbing', name: 'Hot water heater',
-    details: ['Basement, left rear corner', 'Double joists framed above the mechanical area'],
+    details: ['Utility room, basement', 'Double joists framed above the mechanical area'],
   },
   {
     id: 'sump', level: 'B', at: [33.2, 3.9], z: 1.5, category: 'Plumbing', name: 'Sump pit',
     details: ['Collects the 4" interior perimeter drain', 'Basement, right rear corner'],
+  },
+  {
+    id: 'panel', level: 'B', at: [0.7, 11.7], z: 4.5, category: 'Electrical', name: 'Electric panel',
+    details: ['Utility room, on the left foundation wall ("ELE" on the 2017 plan)', 'Basement circuits added in the 2017 renovation (electrical permit 3-29-17)'],
+  },
+  {
+    id: 'smokeB', level: 'B', at: [15.4, 27.1], z: 7.5, category: 'Safety', name: 'Smoke detector (basement)',
+    details: ['At the foot of the stair', 'Added in the 2017 renovation'],
+  },
+  {
+    id: 'bathfan', level: 'B', at: [38.6, 8.6], z: 7.5, category: 'HVAC', name: 'Bath exhaust fan',
+    details: ['Basement bath, under the study wing'],
+  },
+  {
+    id: 'bsmtreno', level: 'B', at: [27, 8], z: 6.5, category: 'Structure', name: 'Basement renovation (2017)',
+    details: [
+      'Plan released by the Metuchen construction office: electrical 3-29-17, fire 3-28-17',
+      'Walls and ceilings: 1/2" drywall; R-13 insulation in all walls',
+      'Framing: galvanized metal studs at 16" o.c.; fire stopping at all walls as needed',
+      'Existing lally columns kept in the walls',
+    ],
   },
   {
     id: 'sewer', level: 'B', at: [26, 30.5], z: 3, category: 'Plumbing', name: 'Main drain to sewer',
@@ -978,35 +1192,6 @@ export const ITEMS = [
   {
     id: 'garagedoors', level: 'L1', floor: H.garageFloor, at: [46.5, 30], z: 8, category: 'Electrical', name: 'Garage door openers',
     details: ['Ceiling-mounted outlets for each opener', 'Two 8\'-0" x 7\'-0" overhead doors'],
-  },
-  {
-    id: 'deckpiers', level: 'L1', floor: DECK.top, at: [18.05, deckY(8)], z: -1.6, category: 'Structure', name: 'Deck posts & helical piers',
-    details: [
-      'Seven 6x6 PT posts (ground-contact rated, MCA .23) on Goliath Tech helical piles',
-      `Support plate MHC1161-3B post cap, 10" helix, 3'-0" minimum depth`,
-      'Required loads: #1 246 lb, #2 2,992, #3 3,638, #4 2,880, #5 2,155, #6 2,880, #7 2,155',
-      `Installer field report records each pile's depth, torque and bearing capacity`,
-    ],
-  },
-  {
-    id: 'deckledger', level: 'L1', floor: DECK.top, at: [12, deckY(0.6)], z: -0.4, category: 'Structure', name: 'Deck ledger',
-    details: [
-      'Bolted to the house rim joist with 3 5/8" LedgerLOK fasteners, staggered',
-      'Simpson DTT1Z-KT tension ties at 4 places, one within 24" of each end',
-      'Joist hangers: Simpson LUS26S; flashing and counter flashing behind the siding',
-    ],
-  },
-  {
-    id: 'decklights', level: 'L1', floor: DECK.top, at: [29.9, deckY(7)], z: 1.5, category: 'Electrical', name: 'Deck lighting',
-    details: ['Post cap lights on 10 rail posts', 'Riser lights on the 7 stair risers'],
-  },
-  {
-    id: 'deckgate', level: 'L1', floor: DECK.top, at: [DECK.x1 + 0.4, deckY((DECK.skirtDoor.d0 + DECK.skirtDoor.d1) / 2)], z: -1.2, category: 'Structure', name: 'Door to under-deck space',
-    details: [
-      'Lattice door in the skirt on the stair side, between the bottom of the stair and the outer corner',
-      'Black hinges on the corner side, latch on the stair side',
-      'The deck plan shows a gate on the far side; the photo shows it here',
-    ],
   },
   {
     id: 'smoke1', level: 'L1', at: [6.5, 23], z: 9, category: 'Safety', name: 'Smoke detector (1st floor)',
@@ -1034,84 +1219,76 @@ export const ITEMS = [
 
   // Property (from the survey). `focus` frames the camera on a wider area.
   {
-    id: 'lot', level: 'site', at: [28, 70], z: 3, category: 'Site', name: 'Lot 56.01, Block 216',
+    id: 'lot', level: 'site', at: [28, 70], z: 3, category: 'Site', name: 'Lot & survey',
     focus: { at: [28, -3], r: 95 },
-    details: [
-      `75.00' x 175.00' = 13,125 sq ft (0.3013 acre)`,
-      `Front line S 81°28'00" E on Orchard Street (formerly Orchard Avenue, 60' R.O.W.); side lines N 08°32'00" E`,
-      `Point of beginning (front right corner) is 1,101.60' from Main Street (66' R.O.W.)`,
-      'Borough of Metuchen tax map, sheet 75',
-      `Also lot 96 and part of lot 95 on the "Map of 218 Building Plots, Property of Laura E. Jones" (1871), filed 1873 as Map No. 80, File No. 57`,
-      'Neighbors: Lot 58 B (left), Lot 54 (right), Lot 126 (rear)',
+    sections: [
+      { title: 'Lot 56.01, Block 216', details: [
+        `75.00' x 175.00' = 13,125 sq ft (0.3013 acre)`,
+        `Front line S 81°28'00" E on Orchard Street (formerly Orchard Avenue, 60' R.O.W.); side lines N 08°32'00" E`,
+        `Point of beginning (front right corner) is 1,101.60' from Main Street (66' R.O.W.)`,
+        'Borough of Metuchen tax map, sheet 75',
+        `Also lot 96 and part of lot 95 on the "Map of 218 Building Plots, Property of Laura E. Jones" (1871), filed 1873 as Map No. 80, File No. 57`,
+        'Neighbors: Lot 58 B (left), Lot 54 (right), Lot 126 (rear)',
+      ] },
+      { title: 'Setbacks', details: [
+        `Required: front 25.00', rear 25.00', left side 10.00', right side 8.00'`,
+        `Garage doors to front line: 48.00' (porch face 48.0', main house front about 52')`,
+        `House to left line: 9.53' (the setback line is drawn at 10.00')`,
+        `Garage to right line: 8.28' on the newer survey`,
+        `Rear yard: about 91' from the back of the house to the rear line`,
+      ] },
+      { title: '100-year flood limit', details: [
+        `Crosses the left line about 31' in front of the rear corner and the rear line about 48' from the left corner`,
+        'The rear-left corner of the lot lies beyond the line',
+      ] },
+      { title: 'Edge of woods', details: [
+        `Runs from about 59' in front of the rear line on the left side to just behind the garage at the right line`,
+        'The backyard inside the lot lines is open; the woods continue on the neighboring lots',
+      ] },
+      { title: 'Property corner markers', details: SITE.corners.map((c) => c.label) },
     ],
   },
   {
-    id: 'setbacks', level: 'site', at: [28.5, LOT.y1 - 25], z: 2, category: 'Site', name: 'Setbacks',
-    focus: { at: [28, 0], r: 90 },
-    details: [
-      `Required: front 25.00', rear 25.00', left side 10.00', right side 8.00'`,
-      `Garage doors to front line: 48.00' (porch face 48.0', main house front about 52')`,
-      `House to left line: 9.53' (the setback line is drawn at 10.00')`,
-      `Garage to right line: 8.28' on the newer survey`,
-      `Rear yard: about 91' from the back of the house to the rear line`,
+    id: 'fence', level: 'site', at: [LOT.x1 - 0.15, -30], z: 6.5, category: 'Site', name: 'Fences & gate',
+    focus: { at: [28, -25], r: 70 },
+    sections: [
+      { title: `6' white vinyl privacy fence`, details: [
+        `Left side: from the left wall of the house (about 17.5' behind the front wall) to the left line, then back along the line to about 22' behind the house`,
+        `Right side: along the right line (Lot 54) from the gate all the way back to the back lot line`,
+        'The survey shows a wood stockade fence on the right line; it has been replaced',
+      ] },
+      { title: `4' chain-link fence`, details: [
+        `Along the left line from about 22' behind the house to the back corner, then across the lot on the back lot line`,
+        'The whole backyard, including the 100-year flood-limit corner, is inside the fence',
+      ] },
+      { title: 'Side yard gate', details: [
+        `Single white vinyl gate, hinged on the left (garage side), latching at the right line`,
+        `A fixed vinyl panel fills the space between the garage's right wall and the gate`,
+      ] },
     ],
   },
   {
-    id: 'flood', level: 'site', at: [0.4, -65.05], z: 2, category: 'Site', name: '100-year flood limit',
-    focus: { at: [10, -62], r: 45 },
-    details: [
-      `Crosses the left line about 31' in front of the rear corner and the rear line about 48' from the left corner`,
-      'The rear-left corner of the lot lies beyond the line',
-    ],
-  },
-  {
-    id: 'woods', level: 'site', at: [12, -40], z: 3, category: 'Site', name: 'Edge of woods',
-    focus: { at: [25, -30], r: 50 },
-    details: [
-      `Runs from about 59' in front of the rear line on the left side to just behind the garage at the right line`,
-      'The backyard inside the lot lines is open; the woods continue on the neighboring lots',
-    ],
-  },
-  {
-    id: 'fence', level: 'site', at: [LOT.x1 - 0.15, -30], z: 6.5, category: 'Site', name: 'Vinyl privacy fence',
-    focus: { at: [28, -25], r: 60 },
-    details: [
-      `6' white vinyl privacy fence`,
-      `Left side: from the left wall of the house (about 17.5' behind the front wall) to the left line, then back along the line to about 22' behind the house`,
-      `Right side: along the right line (Lot 54) from the gate all the way back to the back lot line`,
-      'The survey shows a wood stockade fence on the right line; it has been replaced',
-    ],
-  },
-  {
-    id: 'chainlink', level: 'site', at: [28, LOT.y0 + 0.15], z: 4.5, category: 'Site', name: 'Chain-link fence',
-    focus: { at: [20, -62], r: 55 },
-    details: [
-      `4' chain-link fence`,
-      `Along the left line from about 22' behind the house to the back corner, then across the lot on the back lot line`,
-      'The whole backyard, including the 100-year flood-limit corner, is inside the fence',
-    ],
-  },
-  {
-    id: 'arborvitae', level: 'site', at: [28, LOT.y0 + 3.15], z: 9, category: 'Landscape', name: 'Arborvitae screen (back)',
-    focus: { at: [28, -78], r: 45 },
+    id: 'arborvitae', level: 'site', at: [28, LOT.y0 + 3.15], z: 9, category: 'Landscape', name: 'Thuja Green Giant arborvitae (20)',
+    focus: { at: [28, -48], r: 62 },
     planted: '2025-04',
-    details: [
-      `12 Thuja Green Giant arborvitae`,
-      `Evenly spaced about 6'-3" apart, 3' in front of the back chain-link fence`,
-      `Modeled at about 8' tall; Green Giants grow 3' to 5' a year, to 40' to 60' tall and 12' to 20' wide`,
+    sections: [
+      {
+        title: 'Back screen (12)',
+        details: [`Evenly spaced about 6'-3" apart, 3' in front of the back chain-link fence`],
+      },
+      {
+        title: 'Garage side (4)',
+        details: [`Evenly spaced in a line running back about 20' behind the house, out past the garage`],
+      },
+      {
+        title: 'Chimney side (4)',
+        details: [`Evenly spaced in a line running back about 19' behind the house, just outside its left wall`],
+      },
+      {
+        title: 'The plant',
+        details: [`Modeled at about 8' tall; Green Giants grow 3' to 5' a year, to 40' to 60' tall and 12' to 20' wide`],
+      },
     ],
-  },
-  {
-    id: 'arborvitae-garage', level: 'site', at: [54.6, -10], z: 9, category: 'Landscape', name: 'Arborvitae row (garage side)',
-    focus: { at: [52, -12], r: 25 },
-    planted: '2025-04',
-    details: [`4 Thuja Green Giant arborvitae`, `Evenly spaced in a line running back about 20' behind the house, out past the garage`],
-  },
-  {
-    id: 'arborvitae-chimney', level: 'site', at: [-2.8, -10.5], z: 9, category: 'Landscape', name: 'Arborvitae row (chimney side)',
-    focus: { at: [0, -12], r: 25 },
-    planted: '2025-04',
-    details: [`4 Thuja Green Giant arborvitae`, `Evenly spaced in a line running back about 19' behind the house, just outside its left wall`],
   },
   {
     id: 'serviceberry', level: 'site', at: [27.6, -29.1], z: 9, category: 'Landscape', name: 'Autumn Brilliance serviceberry',
@@ -1134,38 +1311,34 @@ export const ITEMS = [
     ],
   },
   {
-    id: 'frenchdrain', level: 'site', at: [63.2, -70], z: 1.5, category: 'Drainage', name: 'French drain',
-    focus: { at: [52, -72], r: 35 },
-    details: [
-      '4" perforated (holed) pipe, buried',
-      'Along the back lot line on the right half, then up the right side line about 37\'',
-      'Trench: 3/4" clean stone wrapped in filter fabric around the pipe, topsoil on top',
-      'Takes the water from the downspout drain lines',
+    id: 'drainage', level: 'site', at: [63.2, -70], z: 1.5, category: 'Drainage', name: 'Drainage',
+    focus: { at: [28, -35], r: 75 },
+    sections: [
+      { title: 'Downspout drain lines', details: [
+        '4" solid pipe, buried',
+        'Downspouts at the front-left and rear-left corners of the house and the rear-right and front-right corners of the garage',
+        'Runs back along both side yards and across the back of the lot to the French drain',
+      ] },
+      { title: 'French drain', details: [
+        '4" perforated (holed) pipe, buried',
+        'Along the back lot line on the right half, then up the right side line about 37\'',
+        'Trench: 3/4" clean stone wrapped in filter fabric around the pipe, topsoil on top',
+        'Takes the water from the downspout drain lines',
+      ] },
     ],
   },
   {
-    id: 'downspoutdrains', level: 'site', at: [-3.8, -40], z: 1.5, category: 'Drainage', name: 'Downspout drain lines',
-    focus: { at: [28, -30], r: 70 },
-    details: [
-      '4" solid pipe, buried',
-      'Downspouts at the front-left and rear-left corners of the house and the rear-right and front-right corners of the garage',
-      'Runs back along both side yards and across the back of the lot to the French drain',
-    ],
-  },
-  {
-    id: 'maple-porch', level: 'site', at: [3.6, 40.2], z: 23, category: 'Landscape', name: 'Japanese maple (by the porch)',
-    focus: { at: [6, 38], r: 30 },
-    details: [
-      'Mature multi-trunk Japanese maple in front of the left end of the porch',
-      'Identified from a photo of the house; about 20\' to 25\' tall',
-    ],
-  },
-  {
-    id: 'maple-lawn', level: 'site', at: [28.2, 49.5], z: 23, category: 'Landscape', name: 'Japanese maple (front lawn)',
-    focus: { at: [26, 45], r: 30 },
-    details: [
-      'Mature multi-trunk Japanese maple in the front lawn, left of the driveway',
-      'Identified from a photo of the house; about 20\' to 25\' tall',
+    id: 'maples', level: 'site', at: [3.6, 40.2], z: 23, category: 'Landscape', name: 'Japanese maples (2)',
+    focus: { at: [16, 44], r: 34 },
+    sections: [
+      { title: 'By the porch', details: [
+        'Mature multi-trunk Japanese maple in front of the left end of the porch',
+        'Identified from a photo of the house; about 20\' to 25\' tall',
+      ] },
+      { title: 'Front lawn', details: [
+        'Mature multi-trunk Japanese maple in the front lawn, left of the driveway',
+        'Identified from a photo of the house; about 20\' to 25\' tall',
+      ] },
     ],
   },
   {
@@ -1174,22 +1347,12 @@ export const ITEMS = [
     details: ['Mulched beds with low shrubs along the porch, on each side of the front steps'],
   },
   {
-    id: 'fencegate', level: 'site', at: [63.3, 6.5], z: 6.5, category: 'Site', name: 'Side yard gate',
-    focus: { at: [58, 4], r: 25 },
-    details: [
-      `Single white vinyl gate, hinged on the left (garage side), latching at the right line`,
-      `A fixed vinyl panel fills the space between the garage's right wall and the gate`,
+    id: 'driveway', level: 'site', at: [46.6, 66], z: 1, category: 'Site', name: 'Driveways',
+    focus: { at: [20, 60], r: 50 },
+    sections: [
+      { title: 'Ours: asphalt', details: [`About 20.8' wide, from the garage doors to Orchard Street`, 'Depressed curb at the street'] },
+      { title: `Neighbor's (Lot 58 B)`, details: [`Lot 58 B's asphalt drive runs on the left line and overlaps it by 0.3'`] },
     ],
-  },
-  {
-    id: 'driveway', level: 'site', at: [46.6, 66], z: 1, category: 'Site', name: 'Asphalt driveway',
-    focus: { at: [46.6, 62], r: 40 },
-    details: [`About 20.8' wide, from the garage doors to Orchard Street`, 'Depressed curb at the street'],
-  },
-  {
-    id: 'neighbordrive', level: 'site', at: [-12, 60], z: 1, category: 'Site', name: `Neighbor's driveway`,
-    focus: { at: [-8, 55], r: 40 },
-    details: [`Lot 58 B's asphalt drive runs on the left line and overlaps it by 0.3'`],
   },
   {
     id: 'electric', level: 'site', at: [SITE.service.x + 0.4, SITE.service.y], z: SITE.service.meterZ + 1.4, category: 'Electrical', name: 'Electric meter & service',
@@ -1199,11 +1362,6 @@ export const ITEMS = [
       `They land high on the garage's right side wall and run down the wall to the meter`,
       `Meter about 5' above grade, about 7'-6" back from the garage's front corner, with a small box below it`,
     ],
-  },
-  {
-    id: 'corners', level: 'site', at: [LOT.x1, LOT.y1], z: 2, category: 'Site', name: 'Property corner markers',
-    focus: { at: [28, -3], r: 95 },
-    details: SITE.corners.map((c) => c.label),
   },
 ]
 
@@ -1302,11 +1460,12 @@ export const HOME = {
 export const FLOOR_FACTS = {
   L1: { area: '1,320 sq ft (plans, with the study)', ceiling: `9'-0" (8'-0" in the garage wing)` },
   L2: { area: '1,255 sq ft (plans, incl. the open foyer)', ceiling: `8'-0"` },
-  B: { area: 'about 1,130 sq ft, unfinished', ceiling: `8'-0" to the joists` },
+  B: { area: 'about 1,130 sq ft, finished in 2017, plus about 140 sq ft under the study wing', ceiling: `Drywall below the joists (8'-0" to the joists)` },
 }
 
 export const BLUEPRINTS = [
   { id: 's1', set: 'House 2001', file: 'sheet-1-foundation.jpg', title: 'Foundation plan', sheet: '1 of 5' },
+  { id: 'b1', set: 'Basement 2017', file: 'basement-2017.jpg', title: 'Basement finishing plan (permit)', sheet: 'sketch' },
   { id: 's2', set: 'House 2001', file: 'sheet-2-first-floor.jpg', title: 'First floor plan & optional study', sheet: '2 of 5' },
   { id: 's3', set: 'House 2001', file: 'sheet-3-second-floor-roof.jpg', title: 'Second floor & roof plan', sheet: '3 of 5' },
   { id: 's4', set: 'House 2001', file: 'sheet-4-elevations.jpg', title: 'Elevations', sheet: '4 of 5' },

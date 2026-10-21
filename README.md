@@ -22,8 +22,28 @@ server is for development only; don't leave it exposed on a network.
 - In the whole-house view, the Top button shows the lot as a site plan, with deed north on the compass.
 - The room list shows the selected floor only (everything for Whole house). With a floor selected
   and nothing picked, the right panel shows that floor's overview.
-- Furniture: toggle it with the Furniture button, add pieces from presets in the room list, drag a
-  piece in a floor view to move it (snaps to the inch), and type its width, depth and height or
+- Measure: turn on the Measure tool, then click (or tap) two points on anything you can see:
+  walls, floors, cabinets, furniture, the yard. The label gives the length of the line in feet
+  and inches to the nearest 1/4", with the total inches under it (1'-5 3/4" over "17 3/4 inches"). Points snap to a nearby corner
+  (shown square). Drag either point afterwards to adjust it (it snaps the same way). Shift keeps
+  a point square to the other one; Esc drops a half-done measurement; the x on a label removes
+  it. Turning the tool off clears unsaved ones. Save on a label keeps it as a thin line in the
+  view it was taken in (whole house or a floor), with or without the tool on; click the line to
+  open its points and label (and drag a point to change it), click anywhere else to close it.
+  Saved measurements survive a reload (saved in this browser) and are listed in that view's
+  overview panel, where you can name them, click the length to fly to one, or delete it. The
+  cutaway applies: in a floor view you measure what is below the cut.
+- Related things share one listing (the deck and its posts, ledger, lights and door; all 20
+  arborvitae; the fences and gate; the drainage lines; the lot and its survey lines), with a
+  titled section for each part.
+- My notes: every room's details have a notes box for your own notes (paint colors, what is
+  stored where...). They save as you type, in this browser, like the furniture; rooms with notes
+  get a dot in the list, and the search looks through them.
+- The deck counts as outside: with the whole house it is listed under Property and its label
+  shows in the 3D view, and picking it there keeps the whole-house view.
+- Furniture: toggle it with the Furniture button, add pieces from presets in the room list, click
+  a piece in a floor view to select it and then drag it to move it (snaps to the inch; dragging
+  across a piece that is not selected just moves the view), and type its width, depth and height or
   rotate it in the right panel. Walls stop a piece (it slides along them); it can pass through
   a doorway or opening if it fits under the head, and a size or rotation typed in that would push
   it into a wall moves it clear. The layout is saved in this browser (`src/model/furniture.js`),
@@ -32,8 +52,10 @@ server is for development only; don't leave it exposed on a network.
 ## Editing the model in Maya
 
 The house the app shows comes from Maya: `public/model/house.fbx`, exported from the Maya scene
-`maya/house.mb`. Without that file (or with `?model=plans` in the URL) the app builds the house
-from the plans in `src/model/house.js` instead.
+`maya/house.mb`, plus the woods on the neighboring lots in `public/model/woods.fbx` (and
+`woods_phone.fbx`, a copy reduced to about a third of the polygons that phones load). Without
+those files (or with `?model=plans` in the URL) the app builds everything from the plans in
+`src/model/house.js` instead. `maya/house.mb` stays out of git (it is large); keep a backup.
 
 To edit:
 
@@ -54,22 +76,39 @@ Keep these conventions so the app's features keep working:
 - 1 unit = 1 foot. Leave Maya's working units at centimeters (the numbers are feet). Y is up,
   x runs left to right and z from the back of the house toward the street.
 - Everything sits under `home_twin`, in one of its groups: `B`, `L1`, `L2` (the floors, cut away
-  one at a time), `roof` (shown only from outside), `site`, `utilities` (shown with Systems) and
-  `trees` (hidden in floor views). New objects go in one of those groups.
+  one at a time), `roof` (shown only from outside), `site`, `utilities` (shown with Systems),
+  `trees` (the front maples) and `woods` (the trees on the neighboring lots, one object per tree:
+  `woods_tree_001`...). `trees` and `woods` are hidden in floor views. New objects go in one of
+  those groups; a new background tree goes in `woods`.
+- The export writes the woods to their own files, and makes the phone copy each time with Maya's
+  polyReduce, so phones follow your edits.
 - Room floors are named `room_<id>` (`room_kitchen`, `room_dining`...): clicking them selects the
   room. Keep the name when you reshape one.
 - Materials keep their names. The app reads roughness, transparency and bump maps for them from
   `public/model/materials.json`; a new material gets plain defaults and its Maya color and texture.
+  The lawn (`mat_grass`) and asphalt (`mat_asphalt`) are drawn in one flat color whatever texture
+  they have in Maya (`FLAT_COLORS` in `src/three/mayaModel.js`): their textures showed the tiling.
 - Every object is named for what it is (`L1_extwall_04`, `L1_extwall_04_window2`,
   `fixture` names like `L1_Refrigerator_01`, `japanese_maple_01`, `thuja_07`...).
 
-What stays in the app: the woods on the neighboring lots (generated, lighter on phones), the
-furniture, lighting, labels and pins, and the room and item information. Room labels, the room
+What stays in the app: the leaf litter under the woods (it follows the surveyed edge of the
+woods), the furniture, lighting, labels and pins, and the room and item information. Room labels, the room
 list and the furniture's wall checks still use the plan data in `src/model/house.js`, so after
 moving walls or rooms in Maya, update the matching numbers there too.
 
-To start over from the plans (this replaces `maya/house.mb`): open the app with
-`?export=maya` (it writes `maya/export`), then run `npm run maya:build`.
+When the plans change (as with the 2017 basement), only the changed parts are swapped into
+`maya/house.mb`, so your Maya edits elsewhere stay:
+
+1. Open the app with `?export=maya&model=plans` to write the new export. (`maya/export_prev`
+   keeps the export the scene was last built or updated from; the update job refreshes it.)
+2. Run `node tools/maya/run.mjs update <groups or parts>`, for example `update B` or
+   `update B site/excavation`. It first rebuilds those parts from `maya/export_prev` and compares
+   them with your scene; if you have edited one, it stops and lists it (add `--force` to replace
+   it anyway). Otherwise it backs the scene up to `maya/backups`, swaps the parts, saves and
+   exports for the app.
+
+To start over from the plans (this replaces `maya/house.mb` and every edit in it): open the app
+with `?export=maya` (it writes `maya/export`), then run `npm run maya:build`.
 
 ## Where things live
 
@@ -78,10 +117,13 @@ To start over from the plans (this replaces `maya/house.mb`): open the app with
   Units are feet; x runs left to right and y runs rear to front, as printed on the plans.
 - `src/three/buildHouse.js`: turns the data into three.js geometry (walls with openings, floors, stairs, roofs, porch, deck, site).
 - `src/three/textures.js`: the exterior textures (architectural shingles, double 4" lap siding,
-  lawn, asphalt, concrete), drawn on canvases and mapped in world feet so courses line up.
+  concrete), drawn on canvases and mapped in world feet so courses line up. The lawn and asphalt
+  are flat colors (`LAWN_COLOR`, `ASPHALT_COLOR` in `buildHouse.js`).
 - `src/three/vegetation.js`: trees and shrubs built from noise-shaped foliage clumps (the woods
   with an understory and leaf litter, the maples, serviceberry, cherry, thujas and bed shrubs).
-- `src/three/Viewer.js`: camera, controls, lighting (sun with soft shadows, sky light, a cool
+- `src/three/Viewer.js`: camera, controls, lighting (sun with soft shadows over the lot; the
+  woods on the neighboring lots receive shadows but cast none, since their shadows would end in
+  a straight edge where the sun's shadow area stops; sky light, a cool
   fill, and ambient occlusion on desktop; phones skip the occlusion pass and get coarser trees
   and shrubs, about a third of the triangles), level cutaways,
   picking, labels and the compass.
@@ -140,6 +182,15 @@ Where the drawings and the house differ, the model follows the owner's correctio
   on past the counter to the coat closet, and the 3'-0" framed opening to the dining room is
   in its back wall, right beside the microwave counter; a post at the end of the half wall. The dinette table and chairs,
   the island stools and the black storage cabinet are furniture, so they can be moved.
+- The basement was finished in 2017 (permit sketch in the Blueprints tab, released 3-29-17): TV
+  room and gym across the front on either side of the stair, a half wall along the girder line to
+  the open area behind, a finished room (the sketch calls it an office), a utility room with the
+  furnace, water heater and electric panel, two closets and a small water-service closet in the
+  right front corner. Under the study wing, through two doors in the foundation wall: a bath
+  (shower, toilet, sink, exhaust fan) and unfinished storage. Walls are metal studs with drywall
+  and R-13. The sketch is not to scale: positions follow it, anchored on the stair, the girder
+  line and the mechanicals the 2001 foundation plan locates, and the extent of the basement under
+  the study wing (to x 50.5) is an estimate. The finished rooms are shown carpeted, a guess.
 - The deck stair ends on the lawn (the deck plans show a concrete pad).
 - Front, from a photo: black shutters on every front window except the center one under the
   gable, a black front door with sidelights, white porch columns and rails with black balusters,
