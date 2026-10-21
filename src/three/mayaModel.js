@@ -13,7 +13,8 @@ import { LAWN_COLOR, ASPHALT_COLOR } from './buildHouse.js'
 
 const BASE = `${import.meta.env.BASE_URL}model/`
 
-export async function loadMayaModel({ phone = false, woods: withWoods = true } = {}) {
+// `onProgress(fraction)` follows the download of the model files (0..1).
+export async function loadMayaModel({ phone = false, woods: withWoods = true, onProgress } = {}) {
   let extras
   try {
     const res = await fetch(`${BASE}materials.json`, { cache: 'no-cache' })
@@ -23,10 +24,19 @@ export async function loadMayaModel({ phone = false, woods: withWoods = true } =
     return null
   }
   const loader = new FBXLoader()
+  const loaded = {}
+  const total = {}
+  const progress = (file) => (e) => {
+    loaded[file] = e.loaded
+    if (e.total) total[file] = e.total
+    const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0)
+    if (Object.keys(total).length) onProgress?.(Math.min(1, sum(loaded) / sum(total)))
+  }
+  const load = (file) => loader.loadAsync(`${BASE}${file}`, progress(file))
   // a missing file comes back as the app's HTML page, which fails to parse
-  const optional = (file) => loader.loadAsync(`${BASE}${file}`).catch(() => null)
+  const optional = (file) => load(file).catch(() => null)
   const [fbx, woods] = await Promise.all([
-    loader.loadAsync(`${BASE}house.fbx`),
+    load('house.fbx'),
     withWoods ? optional(phone ? 'woods_phone.fbx' : 'woods.fbx') : null,
   ])
   return { fbx, woods, extras }

@@ -85,7 +85,9 @@ The house the app shows comes from Maya: `public/model/house.fbx`, exported from
 `maya/house.mb`, plus the woods on the neighboring lots in `public/model/woods.fbx` (and
 `woods_phone.fbx`, a copy reduced to about a third of the polygons that phones load). Without
 those files (or with `?model=plans` in the URL) the app builds everything from the plans in
-`src/model/house.js` instead. `maya/house.mb` stays out of git (it is large); keep a backup.
+`src/model/house.js` instead. While the Maya files download, the app shows a loading note and
+nothing else (the house built from the plans stays hidden unless the Maya model fails to load).
+`maya/house.mb` stays out of git (it is large); keep a backup.
 
 To edit:
 

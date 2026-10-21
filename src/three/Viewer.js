@@ -236,14 +236,38 @@ export class Viewer {
     this.editable = true // furniture moves and saved-measurement edits (the admin, or no sharing)
     this.attachPicking()
 
-    // The Maya model, when there is one, replaces the house built from the plans
-    // (open the app with ?model=plans to see the generated house instead)
+    // The Maya model is the house. The one built from the plans stays hidden
+    // while it downloads (a note shows the progress) and only appears if
+    // there is no Maya model or it fails to load. Open the app with
+    // ?model=plans to see the generated house instead.
     const usePlans = new URLSearchParams(window.location.search).get('model') === 'plans'
-    ;(usePlans ? Promise.resolve(null) : loadMayaModel({ phone: !highQuality, woods: !lite }))
+    const loading = document.createElement('div')
+    loading.className = 'model-loading'
+    loading.textContent = 'Loading the 3D model...'
+    loading.hidden = usePlans
+    container.appendChild(loading)
+    house.root.visible = usePlans
+    labels.domElement.classList.toggle('waiting', !usePlans)
+    const done = () => {
+      loading.remove()
+      house.root.visible = true
+      labels.domElement.classList.remove('waiting')
+      this.dirty = true
+    }
+    ;(usePlans
+      ? Promise.resolve(null)
+      : loadMayaModel({
+          phone: !highQuality,
+          woods: !lite,
+          onProgress: (f) => {
+            loading.textContent = `Loading the 3D model... ${Math.round(f * 100)}%`
+          },
+        }))
       .then((model) => {
         if (model && !this.disposed) this.useMayaModel(model)
       })
       .catch((err) => console.warn('Maya model not loaded:', err))
+      .finally(done)
 
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(container)
