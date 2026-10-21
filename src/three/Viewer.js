@@ -92,6 +92,10 @@ export class Viewer {
     const gl = renderer.getContext()
     const dbg = gl.getExtension('WEBGL_debug_renderer_info')
     this.gpuName = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? 'unknown')
+    // Bump maps (the siding and shingle courses) only on desktop-class
+    // screens, and never on PowerVR GPUs: there the bump shader draws black
+    // and, while the view moves, faults the driver (Pixel 10, Oct 2026)
+    this.useBump = highQuality && !/PowerVR|Imagination/i.test(this.gpuName)
 
     const labels = new CSS2DRenderer()
     labels.domElement.className = 'label-layer'
@@ -132,7 +136,7 @@ export class Viewer {
       if (!lite) writeLite(true)
       lostText.textContent = lite
         ? 'The 3D view stopped again, even in light mode. If reloading does not help, close the browser completely (swipe it away) and open the page again.'
-        : 'The 3D view stopped because this device ran low on graphics memory.'
+        : 'The 3D view stopped: the graphics driver on this device reset it.'
       reload.textContent = lite ? 'Reload the 3D view' : 'Reload in light mode'
       const secs = ((performance.now() - this.startedAt) / 1000).toFixed(1)
       lostInfo.textContent = `${this.gpuName} · lost ${secs} s after opening${this.usingMaya ? '' : ', while loading'}${lite ? ' · light mode' : ''}`
@@ -177,6 +181,16 @@ export class Viewer {
     scene.add(fill, fill.target)
 
     const house = buildHouse({ lowDetail: !highQuality })
+    if (!this.useBump) {
+      house.root.traverse((o) => {
+        for (const m of [o.material].flat()) {
+          if (m?.bumpMap) {
+            m.bumpMap = null
+            m.needsUpdate = true
+          }
+        }
+      })
+    }
     if (lite) {
       // light mode: no background woods
       for (const o of house.woodsGroup.children.filter((c) => c.userData.forest)) {
@@ -465,7 +479,7 @@ export class Viewer {
     const mats = new Map()
     const material = (m, level) => {
       const key = m.uuid + (level ?? '')
-      if (!mats.has(key)) mats.set(key, appMaterial(m, extras, level ? h.clipPlanes[level] : null))
+      if (!mats.has(key)) mats.set(key, appMaterial(m, extras, level ? h.clipPlanes[level] : null, { bump: this.useBump }))
       return mats.get(key)
     }
     const roomMeshes = []

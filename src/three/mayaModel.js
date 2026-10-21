@@ -51,7 +51,7 @@ const FLAT_COLORS = { mat_grass: LAWN_COLOR, mat_asphalt: ASPHALT_COLOR }
 
 // A standard material for the app (shadows, the cutaway plane, roughness and
 // bump from materials.json) in place of the FBX loader's Phong/Lambert.
-export function appMaterial(m, extras, clipPlane) {
+export function appMaterial(m, extras, clipPlane, { bump = true } = {}) {
   const x = extras[m.name] ?? extras[m.name.replace(/\d+$/, '')] ?? {}
   const flat = FLAT_COLORS[m.name] ?? FLAT_COLORS[m.name.replace(/\d+$/, '')]
   const map = flat ? null : (m.map ?? null)
@@ -69,7 +69,7 @@ export function appMaterial(m, extras, clipPlane) {
     opacity: x.opacity ?? m.opacity,
     alphaTest: x.alphaTest ?? 0,
     emissive: toLinearAsIs((m.emissive ?? new THREE.Color(0, 0, 0)).clone()),
-    bumpMap: x.bump ? bumpTexture(x.bump) : null,
+    bumpMap: bump && x.bump ? bumpTexture(x.bump) : null,
     bumpScale: x.bumpScale ?? 1,
     side: THREE.DoubleSide,
     clippingPlanes: clipPlane ? [clipPlane] : [],
