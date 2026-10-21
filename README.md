@@ -14,6 +14,11 @@ npm run build    # static site in dist/
 To try it on a phone on the same Wi-Fi, opt in for that run with `npm run dev -- --host`. The dev
 server is for development only; don't leave it exposed on a network.
 
+Online, the app is on GitHub Pages at https://ajam0903.github.io/home-twin/. Every push to
+`master` rebuilds and redeploys it (`.github/workflows/pages.yml`), so wait a minute or two after
+pushing. The site is public: anyone with the link can open it. Notes, saved measurements and
+furniture moves stay in each browser, so the phone keeps its own.
+
 ## Layout
 
 - Desktop (1000px and wider): levels and the room list on the left, the 3D model in the middle, details on the right.
