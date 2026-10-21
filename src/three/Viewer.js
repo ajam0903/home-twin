@@ -9,6 +9,7 @@ import { buildHouse } from './buildHouse.js'
 import { buildFurniturePiece } from './furniture.js'
 import { moveFurniture } from '../model/furniture.js'
 import { loadMayaModel, appMaterial, fixVertexColors } from './mayaModel.js'
+import { bakeBumpMaps } from './bakeBump.js'
 import { Measure } from './measure.js'
 import {
   ROOMS, ITEMS, SITE, levelById, roomById, itemById, roomFloor, roomLabelPoint, polyArea, gradeAt,
@@ -92,10 +93,6 @@ export class Viewer {
     const gl = renderer.getContext()
     const dbg = gl.getExtension('WEBGL_debug_renderer_info')
     this.gpuName = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? 'unknown')
-    // Bump maps (the siding and shingle courses) only on desktop-class
-    // screens, and never on PowerVR GPUs: there the bump shader draws black
-    // and, while the view moves, faults the driver (Pixel 10, Oct 2026)
-    this.useBump = highQuality && !/PowerVR|Imagination/i.test(this.gpuName)
 
     const labels = new CSS2DRenderer()
     labels.domElement.className = 'label-layer'
@@ -181,16 +178,8 @@ export class Viewer {
     scene.add(fill, fill.target)
 
     const house = buildHouse({ lowDetail: !highQuality })
-    if (!this.useBump) {
-      house.root.traverse((o) => {
-        for (const m of [o.material].flat()) {
-          if (m?.bumpMap) {
-            m.bumpMap = null
-            m.needsUpdate = true
-          }
-        }
-      })
-    }
+    // siding and shingle courses painted into their color maps (bakeBump.js)
+    bakeBumpMaps(house.root)
     if (lite) {
       // light mode: no background woods
       for (const o of house.woodsGroup.children.filter((c) => c.userData.forest)) {
@@ -479,7 +468,7 @@ export class Viewer {
     const mats = new Map()
     const material = (m, level) => {
       const key = m.uuid + (level ?? '')
-      if (!mats.has(key)) mats.set(key, appMaterial(m, extras, level ? h.clipPlanes[level] : null, { bump: this.useBump }))
+      if (!mats.has(key)) mats.set(key, appMaterial(m, extras, level ? h.clipPlanes[level] : null, { onBaked: () => (this.dirty = true) }))
       return mats.get(key)
     }
     const roomMeshes = []

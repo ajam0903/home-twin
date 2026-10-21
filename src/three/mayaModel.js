@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+import { bakeWhenReady } from './bakeBump.js'
 import { LAWN_COLOR, ASPHALT_COLOR } from './buildHouse.js'
 
 // The house as edited in Maya: public/model/house.fbx, with per-material
@@ -30,13 +31,13 @@ export async function loadMayaModel({ phone = false, woods: withWoods = true } =
   return { fbx, woods, extras }
 }
 
+// Bump images (the siding and shingle courses), baked into the color maps
 const bumpCache = new Map()
-function bumpTexture(name) {
+function bumpImage(name) {
   if (!bumpCache.has(name)) {
-    const t = new THREE.TextureLoader().load(`${BASE}textures/${name}.png`)
-    t.wrapS = t.wrapT = THREE.RepeatWrapping
-    t.anisotropy = 8
-    bumpCache.set(name, t)
+    const img = new Image()
+    img.src = `${BASE}textures/${name}.png`
+    bumpCache.set(name, img)
   }
   return bumpCache.get(name)
 }
@@ -49,16 +50,18 @@ const toLinearAsIs = (c) => c.convertLinearToSRGB()
 // (the lawn and asphalt textures showed their tiling)
 const FLAT_COLORS = { mat_grass: LAWN_COLOR, mat_asphalt: ASPHALT_COLOR }
 
-// A standard material for the app (shadows, the cutaway plane, roughness and
-// bump from materials.json) in place of the FBX loader's Phong/Lambert.
-export function appMaterial(m, extras, clipPlane, { bump = true } = {}) {
+// A standard material for the app (shadows, the cutaway plane, roughness
+// from materials.json) in place of the FBX loader's Phong/Lambert. A bump map
+// in materials.json is painted into the color map (bakeBump.js) rather than
+// used as one; `onBaked` runs when that is done.
+export function appMaterial(m, extras, clipPlane, { onBaked } = {}) {
   const x = extras[m.name] ?? extras[m.name.replace(/\d+$/, '')] ?? {}
   const flat = FLAT_COLORS[m.name] ?? FLAT_COLORS[m.name.replace(/\d+$/, '')]
   const map = flat ? null : (m.map ?? null)
   if (map) map.anisotropy = 8
   // a texture carries its own color; otherwise the shader color from Maya
   const color = flat ? new THREE.Color(flat) : map ? new THREE.Color(1, 1, 1) : toLinearAsIs(m.color.clone())
-  return new THREE.MeshStandardMaterial({
+  const mat = new THREE.MeshStandardMaterial({
     name: m.name,
     color,
     map,
@@ -69,12 +72,12 @@ export function appMaterial(m, extras, clipPlane, { bump = true } = {}) {
     opacity: x.opacity ?? m.opacity,
     alphaTest: x.alphaTest ?? 0,
     emissive: toLinearAsIs((m.emissive ?? new THREE.Color(0, 0, 0)).clone()),
-    bumpMap: bump && x.bump ? bumpTexture(x.bump) : null,
-    bumpScale: x.bumpScale ?? 1,
     side: THREE.DoubleSide,
     clippingPlanes: clipPlane ? [clipPlane] : [],
     clipShadows: !!clipPlane,
   })
+  if (x.bump && map) bakeWhenReady(mat, () => bumpImage(x.bump), x.bumpScale ?? 1, onBaked)
+  return mat
 }
 
 // Vertex colors: same correction as the materials

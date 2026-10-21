@@ -18,9 +18,10 @@ Online, the app is on GitHub Pages at https://ajam0903.github.io/home-twin/. Eve
 `master` rebuilds and redeploys it (`.github/workflows/pages.yml`), so wait a minute or two after
 pushing. The site is public: anyone with the link can open it.
 
-Phones, and any PowerVR GPU, skip the siding and shingle bump maps: on the Pixel 10's PowerVR GPU
-the bump shader drew the walls black and, while the view moved, crashed Chrome's GPU process
-(after a few crashes Chrome stops giving the page 3D until it is restarted).
+The siding laps and shingle courses are painted into their color textures when the app loads
+(`src/three/bakeBump.js`, lit from above like the sun) instead of drawn with bump maps: on the
+Pixel 10's PowerVR GPU the bump shader drew the walls black and, while the view moved, crashed
+Chrome's GPU process (after a few crashes Chrome stops giving the page 3D until it is restarted).
 
 If a browser drops the 3D view anyway (low graphics memory, a driver reset), the app says so, shows the
 graphics chip and when it happened, and from then on that device starts in light mode: no
@@ -115,6 +116,8 @@ Keep these conventions so the app's features keep working:
   room. Keep the name when you reshape one.
 - Materials keep their names. The app reads roughness, transparency and bump maps for them from
   `public/model/materials.json`; a new material gets plain defaults and its Maya color and texture.
+  A bump map there is painted into the material's color texture (see above), not used as a bump
+  map; `bumpScale` sets how deep the painted shadow lines are.
   The lawn (`mat_grass`) and asphalt (`mat_asphalt`) are drawn in one flat color whatever texture
   they have in Maya (`FLAT_COLORS` in `src/three/mayaModel.js`): their textures showed the tiling.
 - Every object is named for what it is (`L1_extwall_04`, `L1_extwall_04_window2`,
