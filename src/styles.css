@@ -1363,3 +1363,27 @@ details.collapsible[open] summary {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Shown when the browser drops the 3D view (see Viewer) */
+.gl-lost {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: var(--bg);
+  color: var(--ink);
+}
+.gl-lost[hidden] {
+  display: none;
+}
+.gl-lost p {
+  margin: 0;
+  max-width: 28ch;
+  line-height: 1.45;
+}

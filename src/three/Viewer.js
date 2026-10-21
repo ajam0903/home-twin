@@ -46,8 +46,14 @@ export class Viewer {
     this.tween = null
     this.dirty = true
 
+    // Phones and small screens skip the ambient occlusion pass, use a
+    // smaller shadow map and render at 1.5x (graphics memory is tight there:
+    // running out drops the 3D view); everything else looks the same.
+    const highQuality = window.matchMedia('(pointer: fine)').matches && Math.min(screen.width, screen.height) >= 700
+    this.highQuality = highQuality
+
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, highQuality ? 2 : 1.5))
     renderer.localClippingEnabled = true
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -73,17 +79,39 @@ export class Viewer {
     needle.appendChild(document.createElement('span')).textContent = 'N'
     compass.appendChild(needle)
     container.appendChild(compass)
+
+    // The browser can drop the WebGL context (a phone low on graphics memory,
+    // the GPU process restarting) and the view goes blank. three.js rebuilds
+    // its GPU state when the context comes back; until then a note explains,
+    // with a reload in case it never does.
+    const lost = document.createElement('div')
+    lost.className = 'gl-lost'
+    lost.hidden = true
+    const lostText = document.createElement('p')
+    lostText.textContent = 'The 3D view stopped because this device ran low on graphics memory.'
+    const reload = document.createElement('button')
+    reload.type = 'button'
+    reload.className = 'btn'
+    reload.textContent = 'Reload the 3D view'
+    reload.addEventListener('click', () => window.location.reload())
+    lost.append(lostText, reload)
+    container.appendChild(lost)
+    this.lostNote = lost
+    renderer.domElement.addEventListener('webglcontextlost', () => {
+      lost.hidden = false
+      labels.domElement.style.visibility = 'hidden'
+    })
+    renderer.domElement.addEventListener('webglcontextrestored', () => {
+      lost.hidden = true
+      labels.domElement.style.visibility = ''
+      this.dirty = true
+    })
     this.compassEl = compass
 
     const scene = new THREE.Scene()
     this.scene = scene
     const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 1000)
     this.camera = camera
-
-    // Phones and small screens skip the ambient occlusion pass and use a
-    // smaller shadow map; everything else looks the same.
-    const highQuality = window.matchMedia('(pointer: fine)').matches && Math.min(screen.width, screen.height) >= 700
-    this.highQuality = highQuality
 
     // Sky and ground bounce. (An environment map was tried: its glancing
     // reflections washed the lawn out to a pale mint.)
@@ -371,6 +399,7 @@ export class Viewer {
       trees: [h.woodsGroup, null],
     }
     const found = Object.keys(targets).filter((name) => fbx.getObjectByName(name))
+    const oldMats = new Set() // the plans model's materials, freed once replaced
     if (!found.includes('L1')) {
       console.warn('Maya model has no L1 group; keeping the house from the plans')
       return
@@ -381,7 +410,10 @@ export class Viewer {
       const old = group.children.filter((o) => name !== 'trees' || o.userData.part)
       for (const o of old) {
         group.remove(o)
-        o.traverse((c) => c.geometry?.dispose())
+        o.traverse((c) => {
+          c.geometry?.dispose()
+          for (const m of [c.material].flat()) if (m) oldMats.add(m)
+        })
       }
     }
     const highlightMat = new THREE.MeshBasicMaterial({ color: 0xff8a1f, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide })
@@ -433,6 +465,7 @@ export class Viewer {
       for (const o of h.woodsGroup.children.filter((c) => c.userData.forest)) {
         h.woodsGroup.remove(o)
         o.geometry?.dispose()
+        for (const m of [o.material].flat()) if (m) oldMats.add(m)
       }
       woods.updateMatrixWorld(true)
       const trees = []
@@ -447,9 +480,26 @@ export class Viewer {
         h.woodsGroup.add(o)
       }
     }
+    this.freeUnused(oldMats)
     this.usingMaya = true
     this.setFurniture(this.furniture, this.showFurniture)
     this.applyMode()
+  }
+
+  // Free the GPU copies of replaced materials and their textures (anything
+  // still drawn by the scene is kept)
+  freeUnused(mats) {
+    const inUse = new Set()
+    this.scene.traverse((o) => {
+      for (const m of [o.material].flat()) if (m) inUse.add(m)
+    })
+    const usedTex = new Set()
+    for (const m of inUse) for (const v of Object.values(m)) if (v?.isTexture) usedTex.add(v)
+    for (const m of mats) {
+      if (inUse.has(m)) continue
+      for (const v of Object.values(m)) if (v?.isTexture && !usedTex.has(v)) v.dispose()
+      m.dispose()
+    }
   }
 
   // ------------------------------------------------------------ furniture
