@@ -66,9 +66,13 @@ same thing, updated live. Anyone can read it; only the admin's Google account ca
 - Related things share one listing (the deck and its posts, ledger, lights and door; all 20
   arborvitae; the fences and gate; the drainage lines; the lot and its survey lines), with a
   titled section for each part.
-- My notes: every room's details have a notes box for your own notes (paint colors, what is
-  stored where...). They save as you type (shared, like the furniture); rooms with notes
-  get a dot in the list, and the search looks through them.
+- My notes: every room's details list your own notes (paint colors, what is stored where...),
+  each its own item with the date it was added. Type one and press Add note (or Ctrl+Enter);
+  Delete asks "Delete this note?" before removing it. Notes are shared, like the furniture;
+  visitors see the list without the add box or Delete. Rooms with notes get a dot in the list,
+  and the search looks through them. (Notes from before this were one text per room; each
+  became a single item.) On the dev server, `?local=1` keeps edits in that browser, for testing
+  without touching the shared data.
 - The deck counts as outside: with the whole house it is listed under Property and its label
   shows in the 3D view, and picking it there keeps the whole-house view.
 - Furniture: toggle it with the Furniture button, add pieces from presets in the room list, click

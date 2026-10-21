@@ -11,7 +11,7 @@ import { Icon } from './Icons.jsx'
 
 export default function DetailPanel({
   selection, onSelect, onClose, hideHeader = false, level = 'exterior', furniture = [], onFurnitureChange, onFurnitureDelete,
-  notes = {}, onNoteChange,
+  notes = {}, onAddNote, onRemoveNote,
   measurements = [], onRenameMeasurement, onRemoveMeasurement, onFocusMeasurement,
 }) {
   if (selection?.kind === 'room' && roomById[selection.id]) {
@@ -23,8 +23,9 @@ export default function DetailPanel({
         onSelect={onSelect}
         onClose={onClose}
         hideHeader={hideHeader}
-        note={notes[key] ?? ''}
-        onNoteChange={onNoteChange ? (text) => onNoteChange(key, text) : null}
+        notes={notes[key] ?? []}
+        onAddNote={onAddNote ? (text) => onAddNote(key, text) : null}
+        onRemoveNote={onRemoveNote ? (id) => onRemoveNote(key, id) : null}
       />
     )
   }
@@ -279,7 +280,7 @@ function Header({ kicker, title, subtitle, onClose }) {
   )
 }
 
-function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, note, onNoteChange }) {
+function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, notes, onAddNote, onRemoveNote }) {
   const openings = openingsForRoom(room)
   const items = ITEMS.filter((i) => i.level === room.level && pointInPoly(i.at, room.poly))
   const pieces = furniture.filter((f) => f.level === room.level && pointInPoly([f.x, f.y], room.poly))
@@ -292,7 +293,7 @@ function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, note, onNo
         <Stat label="Ceiling" value={room.ceiling} />
         {room.flooring && <Stat label="Flooring" value={FLOORING_NAMES[room.flooring]} />}
       </div>
-      <MyNotes value={note} onChange={onNoteChange} />
+      <MyNotes key={room.id} list={notes} onAdd={onAddNote} onRemove={onRemoveNote} />
       {room.notes.length > 0 && (
         <Section title="From the drawings">
           <ul className="bullets">
@@ -373,28 +374,66 @@ function ItemDetail({ item, onSelect, onClose, hideHeader }) {
   )
 }
 
-// The owner's own notes for a room: saved as they type, in this browser
-function MyNotes({ value, onChange }) {
-  if (!onChange) {
-    // view only: just the note, when there is one
-    if (!value) return null
-    return (
-      <section className="detail-section my-notes">
-        <h3>Notes</h3>
-        <p className="note-text">{value}</p>
-      </section>
-    )
+// The owner's notes for a room, one item each: add one, or delete one after
+// confirming. Visitors see the list only.
+function MyNotes({ list, onAdd, onRemove }) {
+  const [draft, setDraft] = useState('')
+  const [confirming, setConfirming] = useState(null) // id of the note asking "Delete?"
+  if (!onAdd && !list.length) return null
+  const add = () => {
+    if (!draft.trim()) return
+    onAdd(draft)
+    setDraft('')
   }
   return (
     <section className="detail-section my-notes">
-      <h3>My notes</h3>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Paint colors, measurements, what is stored here, things to fix..."
-        rows={Math.min(12, Math.max(3, value.split('\n').length + 1))}
-      />
-      <p className="muted">{SAVED_WHERE}</p>
+      <h3>{onAdd ? 'My notes' : 'Notes'}</h3>
+      {list.length > 0 && (
+        <ul className="note-list">
+          {list.map((n) => (
+            <li key={n.id} className={confirming === n.id ? 'confirming' : ''}>
+              <p className="note-text">{n.text}</p>
+              <div className="note-meta">
+                {n.at > 0 && <span>{new Date(n.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                {onRemove &&
+                  (confirming === n.id ? (
+                    <span className="note-confirm" role="group" aria-label="Confirm deletion">
+                      <span>Delete this note?</span>
+                      <button type="button" className="link danger" onClick={() => onRemove(n.id)}>
+                        Delete
+                      </button>
+                      <button type="button" className="link" onClick={() => setConfirming(null)}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button type="button" className="link note-delete" onClick={() => setConfirming(n.id)} aria-label="Delete this note">
+                      Delete
+                    </button>
+                  ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {onAdd && (
+        <div className="note-add">
+          <textarea
+            id="note-draft"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) add()
+            }}
+            placeholder="Paint colors, measurements, what is stored here, things to fix..."
+            rows={Math.min(8, Math.max(2, draft.split('\n').length + 1))}
+          />
+          <button type="button" className="btn" onClick={add} disabled={!draft.trim()}>
+            Add note
+          </button>
+        </div>
+      )}
+      {onAdd && <p className="muted">{SAVED_WHERE}</p>}
     </section>
   )
 }

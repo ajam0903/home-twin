@@ -80,14 +80,20 @@ export default function App() {
 
   // The owner's notes by room
   const [notes, setNotes, notesSync] = useSharedField(shared, 'notes', { load: loadNotes, save: saveNotes, fromShared: cleanNotes })
-  const setNote = useCallback((key, text) => {
+  const addNote = useCallback((key, text) => {
+    const note = { id: `n${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`, text: text.trim(), at: Date.now() }
+    if (note.text) setNotes((all) => ({ ...all, [key]: [...(all[key] ?? []), note] }))
+  }, [])
+  const removeNote = useCallback((key, id) => {
     setNotes((all) => {
       const next = { ...all }
-      if (text.trim()) next[key] = text
+      const list = (next[key] ?? []).filter((n) => n.id !== id)
+      if (list.length) next[key] = list
       else delete next[key]
       return next
     })
   }, [])
+  const noteProps = { notes, onAddNote: editable ? addNote : null, onRemoveNote: editable ? removeNote : null }
 
   const levelOf = (sel) =>
     sel?.kind === 'room' ? roomById[sel.id]?.level
@@ -309,8 +315,7 @@ export default function App() {
                 furniture={furniture}
                 onFurnitureChange={editable ? updateFurniture : null}
                 onFurnitureDelete={editable ? removeFurniture : null}
-                notes={notes}
-                onNoteChange={editable ? setNote : null}
+                {...noteProps}
                 {...measureProps}
               />
             </aside>
@@ -393,8 +398,7 @@ export default function App() {
                 furniture={furniture}
                 onFurnitureChange={editable ? updateFurniture : null}
                 onFurnitureDelete={editable ? removeFurniture : null}
-                notes={notes}
-                onNoteChange={editable ? setNote : null}
+                {...noteProps}
               />
             ) : (
               <>

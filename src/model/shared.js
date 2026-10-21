@@ -9,7 +9,10 @@ import { firebaseConfig, ADMIN_UIDS } from '../firebaseConfig.js'
 // the app reads it; only the admin's account may write (firestore.rules).
 // Each browser keeps a copy, so the app starts with the last data it saw.
 
-export const sharingEnabled = !!firebaseConfig
+// ?local=1 (dev server only) keeps edits in this browser, for testing
+// without touching the shared data
+const localOnly = import.meta.env.DEV && new URLSearchParams(window.location.search).has('local')
+export const sharingEnabled = !!firebaseConfig && !localOnly
 
 const app = sharingEnabled ? initializeApp(firebaseConfig) : null
 const db = app ? getFirestore(app) : null

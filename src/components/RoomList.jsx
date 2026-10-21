@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ROOMS, ITEMS, levelById, roomArea, plantedInfo } from '../model/house.js'
 import { FURNITURE_PRESETS, feetInches } from '../model/furniture.js'
-import { roomNoteKey } from '../model/notes.js'
+import { roomNoteKey, notesText } from '../model/notes.js'
 import { Icon } from './Icons.jsx'
 
 // First floor first; the property goes with the whole house.
@@ -22,7 +22,7 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
         rooms: ROOMS.filter((r) => {
           const listed = level === 'exterior' && r.outdoor ? 'site' : r.level
           // the search also looks through your notes for the room
-          return listed === id && match(`${r.name} ${r.subtitle ?? ''} ${r.type} ${notes[roomNoteKey(r.id)] ?? ''}`)
+          return listed === id && match(`${r.name} ${r.subtitle ?? ''} ${r.type} ${notesText(notes[roomNoteKey(r.id)])}`)
         }),
         items: ITEMS.filter((i) => i.level === id && match(`${i.name} ${i.category}`)),
         furniture: furniture.filter((f) => f.level === id && match(`${f.name} furniture`)),
@@ -56,7 +56,7 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
                     {r.subtitle && <span className="row-sub">{r.subtitle}</span>}
                   </span>
                   <span className="row-meta">
-                    {notes[roomNoteKey(r.id)] && <span className="note-dot" title="Has your notes" />}
+                    {notes[roomNoteKey(r.id)]?.length > 0 && <span className="note-dot" title="Has notes" />}
                     {roomArea(r)} sf
                   </span>
                 </button>
