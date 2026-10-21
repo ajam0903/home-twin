@@ -23,12 +23,25 @@ const ViewerCanvas = forwardRef(function ViewerCanvas(
   onRemoveRef.current = onMeasurementRemove
 
   useEffect(() => {
-    const v = new Viewer(host.current, {
-      onSelect: (s) => onSelectRef.current?.(s),
-      onFurnitureMove: (id, x, y) => onMoveRef.current?.(id, x, y),
-      onMeasurementSave: (m) => onSaveRef.current?.(m),
-      onMeasurementRemove: (id) => onRemoveRef.current?.(id),
-    })
+    let v
+    try {
+      v = new Viewer(host.current, {
+        onSelect: (s) => onSelectRef.current?.(s),
+        onFurnitureMove: (id, x, y) => onMoveRef.current?.(id, x, y),
+        onMeasurementSave: (m) => onSaveRef.current?.(m),
+        onMeasurementRemove: (id) => onRemoveRef.current?.(id),
+      })
+    } catch (err) {
+      // the browser refused a WebGL context (it can, after losing several)
+      console.warn('3D view unavailable', err)
+      const note = document.createElement('div')
+      note.className = 'gl-lost'
+      const text = document.createElement('p')
+      text.textContent = 'This browser is not showing 3D right now. Close the browser completely (swipe it away) and open the page again.'
+      note.appendChild(text)
+      host.current.appendChild(note)
+      return () => note.remove()
+    }
     viewer.current = v
     if (import.meta.env.DEV) window.__homeViewer = v // for camera checks in dev
     // Dev only: open the app with ?export=maya to write maya/export for Maya
@@ -46,7 +59,10 @@ const ViewerCanvas = forwardRef(function ViewerCanvas(
         .then((summary) => console.info('[maya export] done', summary))
         .catch((err) => say(`Export failed: ${err.message}`))
     }
-    return () => v.dispose()
+    return () => {
+      viewer.current = null
+      v.dispose()
+    }
   }, [])
 
   // Mode first, then furniture, then selection, so a selection's fly-to wins over the level framing.

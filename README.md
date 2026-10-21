@@ -18,6 +18,10 @@ Online, the app is on GitHub Pages at https://ajam0903.github.io/home-twin/. Eve
 `master` rebuilds and redeploys it (`.github/workflows/pages.yml`), so wait a minute or two after
 pushing. The site is public: anyone with the link can open it.
 
+If a browser drops the 3D view (a phone low on graphics memory), the app says so, shows the
+graphics chip and when it happened, and from then on that device starts in light mode: no
+shadows, 1x pixels, no background woods. `?lite=0` turns light mode off again, `?lite=1` forces it.
+
 ### Shared data and the admin
 
 Room notes, saved measurements and the furniture layout live in one Firestore document

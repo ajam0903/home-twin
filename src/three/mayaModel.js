@@ -11,7 +11,7 @@ import { LAWN_COLOR, ASPHALT_COLOR } from './buildHouse.js'
 
 const BASE = `${import.meta.env.BASE_URL}model/`
 
-export async function loadMayaModel({ phone = false } = {}) {
+export async function loadMayaModel({ phone = false, woods: withWoods = true } = {}) {
   let extras
   try {
     const res = await fetch(`${BASE}materials.json`, { cache: 'no-cache' })
@@ -23,7 +23,10 @@ export async function loadMayaModel({ phone = false } = {}) {
   const loader = new FBXLoader()
   // a missing file comes back as the app's HTML page, which fails to parse
   const optional = (file) => loader.loadAsync(`${BASE}${file}`).catch(() => null)
-  const [fbx, woods] = await Promise.all([loader.loadAsync(`${BASE}house.fbx`), optional(phone ? 'woods_phone.fbx' : 'woods.fbx')])
+  const [fbx, woods] = await Promise.all([
+    loader.loadAsync(`${BASE}house.fbx`),
+    withWoods ? optional(phone ? 'woods_phone.fbx' : 'woods.fbx') : null,
+  ])
   return { fbx, woods, extras }
 }
 

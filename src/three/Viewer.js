@@ -14,6 +14,26 @@ import {
   ROOMS, ITEMS, SITE, levelById, roomById, itemById, roomFloor, roomLabelPoint, polyArea, gradeAt,
 } from '../model/house.js'
 
+// Light mode, remembered per device: a device that lost the 3D view once
+// starts without shadows, at 1x pixels and without the background woods.
+// ?lite=1 or ?lite=0 sets it.
+const LITE_KEY = 'homeTwin.lite3d'
+function readLite() {
+  try {
+    return localStorage.getItem(LITE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function writeLite(on) {
+  try {
+    if (on) localStorage.setItem(LITE_KEY, '1')
+    else localStorage.removeItem(LITE_KEY)
+  } catch {
+    // storage unavailable: light mode lasts for this page only
+  }
+}
+
 const CENTER = new THREE.Vector3(28.5, 9, 14)
 const NORTH_RAD = THREE.MathUtils.degToRad(SITE.northDeg)
 // Deed north: "up" on the plans (toward the rear, -z) turned counterclockwise.
@@ -52,16 +72,26 @@ export class Viewer {
     const highQuality = window.matchMedia('(pointer: fine)').matches && Math.min(screen.width, screen.height) >= 700
     this.highQuality = highQuality
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, highQuality ? 2 : 1.5))
+    const liteParam = new URLSearchParams(window.location.search).get('lite')
+    if (liteParam != null) writeLite(liteParam !== '0')
+    const lite = liteParam != null ? liteParam !== '0' : readLite()
+    this.lite = lite
+    this.startedAt = performance.now()
+
+    const renderer = new THREE.WebGLRenderer({ antialias: !lite, alpha: true })
+    renderer.setPixelRatio(lite ? 1 : Math.min(window.devicePixelRatio, highQuality ? 2 : 1.5))
     renderer.localClippingEnabled = true
-    renderer.shadowMap.enabled = true
+    renderer.shadowMap.enabled = !lite
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.05
     container.appendChild(renderer.domElement)
     this.renderer = renderer
+    // the graphics chip, shown if the view is lost
+    const gl = renderer.getContext()
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info')
+    this.gpuName = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? 'unknown')
 
     const labels = new CSS2DRenderer()
     labels.domElement.className = 'label-layer'
@@ -83,21 +113,29 @@ export class Viewer {
     // The browser can drop the WebGL context (a phone low on graphics memory,
     // the GPU process restarting) and the view goes blank. three.js rebuilds
     // its GPU state when the context comes back; until then a note explains,
-    // with a reload in case it never does.
+    // with a reload, which also switches this device to light mode.
     const lost = document.createElement('div')
     lost.className = 'gl-lost'
     lost.hidden = true
     const lostText = document.createElement('p')
-    lostText.textContent = 'The 3D view stopped because this device ran low on graphics memory.'
     const reload = document.createElement('button')
     reload.type = 'button'
     reload.className = 'btn'
-    reload.textContent = 'Reload the 3D view'
     reload.addEventListener('click', () => window.location.reload())
-    lost.append(lostText, reload)
+    const lostInfo = document.createElement('p')
+    lostInfo.className = 'gl-lost-info'
+    lost.append(lostText, reload, lostInfo)
     container.appendChild(lost)
     this.lostNote = lost
     renderer.domElement.addEventListener('webglcontextlost', () => {
+      if (this.disposed) return
+      if (!lite) writeLite(true)
+      lostText.textContent = lite
+        ? 'The 3D view stopped again, even in light mode. If reloading does not help, close the browser completely (swipe it away) and open the page again.'
+        : 'The 3D view stopped because this device ran low on graphics memory.'
+      reload.textContent = lite ? 'Reload the 3D view' : 'Reload in light mode'
+      const secs = ((performance.now() - this.startedAt) / 1000).toFixed(1)
+      lostInfo.textContent = `${this.gpuName} · lost ${secs} s after opening${this.usingMaya ? '' : ', while loading'}${lite ? ' · light mode' : ''}`
       lost.hidden = false
       labels.domElement.style.visibility = 'hidden'
     })
@@ -139,6 +177,13 @@ export class Viewer {
     scene.add(fill, fill.target)
 
     const house = buildHouse({ lowDetail: !highQuality })
+    if (lite) {
+      // light mode: no background woods
+      for (const o of house.woodsGroup.children.filter((c) => c.userData.forest)) {
+        house.woodsGroup.remove(o)
+        o.geometry?.dispose()
+      }
+    }
     this.house = house
     scene.add(house.root)
 
@@ -180,7 +225,7 @@ export class Viewer {
     // The Maya model, when there is one, replaces the house built from the plans
     // (open the app with ?model=plans to see the generated house instead)
     const usePlans = new URLSearchParams(window.location.search).get('model') === 'plans'
-    ;(usePlans ? Promise.resolve(null) : loadMayaModel({ phone: !highQuality }))
+    ;(usePlans ? Promise.resolve(null) : loadMayaModel({ phone: !highQuality, woods: !lite }))
       .then((model) => {
         if (model && !this.disposed) this.useMayaModel(model)
       })
@@ -819,6 +864,7 @@ export class Viewer {
     this.composer?.dispose()
     this.aoPass?.dispose()
     this.renderer.dispose()
+    this.renderer.forceContextLoss() // hand the GPU memory back now
     this.scene.traverse((o) => {
       if (o.geometry) o.geometry.dispose()
     })
