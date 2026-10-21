@@ -49,6 +49,10 @@ same thing, updated live. Anyone can read it; only the admin's Google account ca
 - Desktop (1000px and wider): levels and the room list on the left, the 3D model in the middle, details on the right.
 - Phones: full-screen model, level chips at the top, a draggable bottom sheet for rooms, systems and details.
 - Blueprints tab: the original sheets (house, deck, survey) with pan and zoom (pinch on phones).
+  Shown only to the admin (signed in); the public sees the 3D model alone. The image files are
+  still in `public/blueprints`, so anyone with a direct link to one can open it.
+- Systems pins start hidden; the Systems button shows them. Dragging from a pin or room label
+  moves the view like dragging anywhere else; a tap opens it.
 - In the whole-house view, the Top button shows the lot as a site plan, with deed north on the compass.
 - The room list shows the selected floor only (everything for Whole house). With a floor selected
   and nothing picked, the right panel shows that floor's overview.
@@ -68,7 +72,8 @@ same thing, updated live. Anyone can read it; only the admin's Google account ca
   titled section for each part.
 - My notes: every room's details list your own notes (paint colors, what is stored where...),
   each its own item with the date it was added. Type one and press Add note (or Ctrl+Enter);
-  Delete asks "Delete this note?" before removing it. Notes are shared, like the furniture;
+  Edit changes a note in place (Save or Ctrl+Enter, Cancel or Esc; it then shows when it was
+  edited), and Delete asks "Delete this note?" before removing it. Notes are shared, like the furniture;
   visitors see the list without the add box or Delete. Rooms with notes get a dot in the list,
   and the search looks through them. (Notes from before this were one text per room; each
   became a single item.) On the dev server, `?local=1` keeps edits in that browser, for testing

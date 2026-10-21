@@ -34,7 +34,7 @@ export default function App() {
   const [level, setLevel] = useState('exterior')
   const [selection, setSelection] = useState(null)
   const [cut, setCut] = useState(true)
-  const [pins, setPins] = useState(true)
+  const [pins, setPins] = useState(false) // systems pins, off until the Systems button turns them on
   const [sheet, setSheet] = useState('peek')
   const [sheetTab, setSheetTab] = useState('rooms')
   const [showFurniture, setShowFurniture] = useState(true)
@@ -84,6 +84,10 @@ export default function App() {
     const note = { id: `n${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`, text: text.trim(), at: Date.now() }
     if (note.text) setNotes((all) => ({ ...all, [key]: [...(all[key] ?? []), note] }))
   }, [])
+  const editNote = useCallback((key, id, text) => {
+    if (!text.trim()) return
+    setNotes((all) => ({ ...all, [key]: (all[key] ?? []).map((n) => (n.id === id ? { ...n, text: text.trim(), edited: Date.now() } : n)) }))
+  }, [])
   const removeNote = useCallback((key, id) => {
     setNotes((all) => {
       const next = { ...all }
@@ -93,7 +97,12 @@ export default function App() {
       return next
     })
   }, [])
-  const noteProps = { notes, onAddNote: editable ? addNote : null, onRemoveNote: editable ? removeNote : null }
+  const noteProps = {
+    notes,
+    onAddNote: editable ? addNote : null,
+    onEditNote: editable ? editNote : null,
+    onRemoveNote: editable ? removeNote : null,
+  }
 
   const levelOf = (sel) =>
     sel?.kind === 'room' ? roomById[sel.id]?.level
@@ -264,7 +273,12 @@ export default function App() {
     : selection ? null
     : 'Tap a room or a pin for details'
 
-  const tabs = (
+  // The Blueprints tab is for the admin only (signed in), not the public
+  const showPlans = !sharingEnabled || shared.admin
+  useEffect(() => {
+    if (!showPlans && tab === 'plans') setTab('model')
+  }, [showPlans, tab])
+  const tabs = showPlans && (
     <div className="tabs" role="tablist">
       <button type="button" role="tab" aria-label="3D model" aria-selected={tab === 'model'} className={tab === 'model' ? 'on' : ''} onClick={() => setTab('model')}>
         <Icon.cube />
@@ -322,7 +336,7 @@ export default function App() {
           </>
         ) : (
           <main className="plans-stage">
-            <Blueprints />
+            {showPlans && <Blueprints />}
           </main>
         )}
       </div>
@@ -421,7 +435,7 @@ export default function App() {
         </>
       ) : (
         <main className="plans-stage">
-          <Blueprints compact />
+          {showPlans && <Blueprints compact />}
         </main>
       )}
     </div>

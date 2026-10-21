@@ -292,6 +292,22 @@ export class Viewer {
 
   // ------------------------------------------------------------ labels
 
+  // Pins and room labels sit on top of the canvas. A press on one is passed
+  // to the canvas, so dragging from it still orbits or pans the view; a tap
+  // that does not move opens it (see the canvas pointerup). Keyboard
+  // activation (Enter, Space) opens it too.
+  tappable(el, onTap) {
+    el.addEventListener('pointerdown', (e) => {
+      this.labelTap = onTap
+      e.preventDefault()
+      this.renderer.domElement.dispatchEvent(new PointerEvent('pointerdown', e))
+    })
+    el.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (e.detail === 0) onTap() // keyboard
+    })
+  }
+
   buildLabels() {
     this.roomLabels = []
     for (const room of ROOMS) {
@@ -300,10 +316,7 @@ export class Viewer {
       el.className = 'room-label'
       el.textContent = room.name
       if (polyArea(room.poly) < 30) el.classList.add('small')
-      el.addEventListener('click', (e) => {
-        e.stopPropagation()
-        this.onSelect?.({ kind: 'room', id: room.id })
-      })
+      this.tappable(el, () => this.onSelect?.({ kind: 'room', id: room.id }))
       const obj = new CSS2DObject(el)
       const [x, y] = roomLabelPoint(room)
       obj.position.set(x, roomFloor(room) + 0.3, y)
@@ -320,10 +333,7 @@ export class Viewer {
       el.title = item.name
       el.setAttribute('aria-label', item.name)
       el.textContent = CATEGORY_GLYPH[item.category] ?? 'i'
-      el.addEventListener('click', (e) => {
-        e.stopPropagation()
-        this.onSelect?.({ kind: 'item', id: item.id })
-      })
+      this.tappable(el, () => this.onSelect?.({ kind: 'item', id: item.id }))
       const obj = new CSS2DObject(el)
       const base = item.floor ?? levelById[item.level].floor
       obj.position.set(item.at[0], base + item.z, item.at[1])
@@ -835,7 +845,14 @@ export class Viewer {
       if (!down) return
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y)
       down = null
+      const labelTap = this.labelTap
+      this.labelTap = null
       if (moved > 6) return
+      // the press started on a pin or room label: open it
+      if (labelTap) {
+        labelTap()
+        return
+      }
       // a saved measurement's thin line opens it (unless a measurement is
       // half placed); any other click closes the open one
       if (!(this.measuring && this.measure.first)) {

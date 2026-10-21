@@ -1264,9 +1264,16 @@ details.collapsible[open] summary {
   font-size: 12px;
   color: var(--muted);
 }
-.note-meta .note-delete,
+.note-meta .note-edit,
 .note-confirm {
   margin-left: auto;
+}
+.note-list li.editing {
+  border-color: var(--accent);
+}
+.note-meta .link:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .note-confirm {
   display: inline-flex;

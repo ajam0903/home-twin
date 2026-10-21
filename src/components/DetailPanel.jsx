@@ -11,7 +11,7 @@ import { Icon } from './Icons.jsx'
 
 export default function DetailPanel({
   selection, onSelect, onClose, hideHeader = false, level = 'exterior', furniture = [], onFurnitureChange, onFurnitureDelete,
-  notes = {}, onAddNote, onRemoveNote,
+  notes = {}, onAddNote, onEditNote, onRemoveNote,
   measurements = [], onRenameMeasurement, onRemoveMeasurement, onFocusMeasurement,
 }) {
   if (selection?.kind === 'room' && roomById[selection.id]) {
@@ -25,6 +25,7 @@ export default function DetailPanel({
         hideHeader={hideHeader}
         notes={notes[key] ?? []}
         onAddNote={onAddNote ? (text) => onAddNote(key, text) : null}
+        onEditNote={onEditNote ? (id, text) => onEditNote(key, id, text) : null}
         onRemoveNote={onRemoveNote ? (id) => onRemoveNote(key, id) : null}
       />
     )
@@ -280,7 +281,7 @@ function Header({ kicker, title, subtitle, onClose }) {
   )
 }
 
-function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, notes, onAddNote, onRemoveNote }) {
+function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, notes, onAddNote, onEditNote, onRemoveNote }) {
   const openings = openingsForRoom(room)
   const items = ITEMS.filter((i) => i.level === room.level && pointInPoly(i.at, room.poly))
   const pieces = furniture.filter((f) => f.level === room.level && pointInPoly([f.x, f.y], room.poly))
@@ -293,7 +294,7 @@ function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, notes, onA
         <Stat label="Ceiling" value={room.ceiling} />
         {room.flooring && <Stat label="Flooring" value={FLOORING_NAMES[room.flooring]} />}
       </div>
-      <MyNotes key={room.id} list={notes} onAdd={onAddNote} onRemove={onRemoveNote} />
+      <MyNotes key={room.id} list={notes} onAdd={onAddNote} onEdit={onEditNote} onRemove={onRemoveNote} />
       {room.notes.length > 0 && (
         <Section title="From the drawings">
           <ul className="bullets">
@@ -374,11 +375,14 @@ function ItemDetail({ item, onSelect, onClose, hideHeader }) {
   )
 }
 
-// The owner's notes for a room, one item each: add one, or delete one after
-// confirming. Visitors see the list only.
-function MyNotes({ list, onAdd, onRemove }) {
+const shortDate = (ms) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+
+// The owner's notes for a room, one item each: add one, edit one, or delete
+// one after confirming. Visitors see the list only.
+function MyNotes({ list, onAdd, onEdit, onRemove }) {
   const [draft, setDraft] = useState('')
   const [confirming, setConfirming] = useState(null) // id of the note asking "Delete?"
+  const [editing, setEditing] = useState(null) // { id, text } of the note being edited
   if (!onAdd && !list.length) return null
   const add = () => {
     if (!draft.trim()) return
@@ -391,27 +395,89 @@ function MyNotes({ list, onAdd, onRemove }) {
       {list.length > 0 && (
         <ul className="note-list">
           {list.map((n) => (
-            <li key={n.id} className={confirming === n.id ? 'confirming' : ''}>
-              <p className="note-text">{n.text}</p>
-              <div className="note-meta">
-                {n.at > 0 && <span>{new Date(n.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-                {onRemove &&
-                  (confirming === n.id ? (
-                    <span className="note-confirm" role="group" aria-label="Confirm deletion">
-                      <span>Delete this note?</span>
-                      <button type="button" className="link danger" onClick={() => onRemove(n.id)}>
-                        Delete
+            <li key={n.id} className={confirming === n.id ? 'confirming' : editing?.id === n.id ? 'editing' : ''}>
+              {editing?.id === n.id ? (
+                <>
+                  <textarea
+                    id={`note-edit-${n.id}`}
+                    value={editing.text}
+                    onChange={(e) => setEditing({ id: n.id, text: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && editing.text.trim()) {
+                        onEdit(n.id, editing.text)
+                        setEditing(null)
+                      }
+                      if (e.key === 'Escape') setEditing(null)
+                    }}
+                    rows={Math.min(8, Math.max(2, editing.text.split('\n').length + 1))}
+                    aria-label="Edit note"
+                    autoFocus
+                  />
+                  <div className="note-meta">
+                    <span className="note-confirm">
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={!editing.text.trim()}
+                        onClick={() => {
+                          onEdit(n.id, editing.text)
+                          setEditing(null)
+                        }}
+                      >
+                        Save
                       </button>
-                      <button type="button" className="link" onClick={() => setConfirming(null)}>
+                      <button type="button" className="link" onClick={() => setEditing(null)}>
                         Cancel
                       </button>
                     </span>
-                  ) : (
-                    <button type="button" className="link note-delete" onClick={() => setConfirming(n.id)} aria-label="Delete this note">
-                      Delete
+                  </div>
+                </>
+              ) : (
+                <p className="note-text">{n.text}</p>
+              )}
+              {editing?.id !== n.id && (
+                <div className="note-meta">
+                  {n.at > 0 && <span>{shortDate(n.at)}</span>}
+                  {n.edited > 0 && <span>edited {shortDate(n.edited)}</span>}
+                  {onEdit && confirming !== n.id && (
+                    <button
+                      type="button"
+                      className="link note-edit"
+                      onClick={() => {
+                        setConfirming(null)
+                        setEditing({ id: n.id, text: n.text })
+                      }}
+                      aria-label="Edit this note"
+                    >
+                      Edit
                     </button>
-                  ))}
-              </div>
+                  )}
+                  {onRemove &&
+                    (confirming === n.id ? (
+                      <span className="note-confirm" role="group" aria-label="Confirm deletion">
+                        <span>Delete this note?</span>
+                        <button type="button" className="link danger" onClick={() => onRemove(n.id)}>
+                          Delete
+                        </button>
+                        <button type="button" className="link" onClick={() => setConfirming(null)}>
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="link note-delete"
+                        onClick={() => {
+                          setEditing(null)
+                          setConfirming(n.id)
+                        }}
+                        aria-label="Delete this note"
+                      >
+                        Delete
+                      </button>
+                    ))}
+                </div>
+              )}
             </li>
           ))}
         </ul>
