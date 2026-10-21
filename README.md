@@ -120,6 +120,8 @@ Keep these conventions so the app's features keep working:
   map; `bumpScale` sets how deep the painted shadow lines are.
   The lawn (`mat_grass`) and asphalt (`mat_asphalt`) are drawn in one flat color whatever texture
   they have in Maya (`FLAT_COLORS` in `src/three/mayaModel.js`): their textures showed the tiling.
+  The roof shingles (`mat_shingles`) are drawn at twice their tile size, so they repeat half as
+  often (`TEXTURE_SCALE` in `src/three/textures.js`; it leaves the Maya scene as it is).
 - Every object is named for what it is (`L1_extwall_04`, `L1_extwall_04_window2`,
   `fixture` names like `L1_Refrigerator_01`, `japanese_maple_01`, `thuja_07`...).
 

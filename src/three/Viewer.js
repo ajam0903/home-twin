@@ -10,6 +10,7 @@ import { buildFurniturePiece } from './furniture.js'
 import { moveFurniture } from '../model/furniture.js'
 import { loadMayaModel, appMaterial, fixVertexColors } from './mayaModel.js'
 import { bakeBumpMaps } from './bakeBump.js'
+import { TEXTURE_SCALE } from './textures.js'
 import { Measure } from './measure.js'
 import {
   ROOMS, ITEMS, SITE, levelById, roomById, itemById, roomFloor, roomLabelPoint, polyArea, gradeAt,
@@ -178,6 +179,16 @@ export class Viewer {
     scene.add(fill, fill.target)
 
     const house = buildHouse({ lowDetail: !highQuality })
+    // fewer repeats for some textures (a copy: the textures are shared with the Maya export)
+    house.root.traverse((o) => {
+      for (const m of [o.material].flat()) {
+        const scale = m?.map && TEXTURE_SCALE[m.map.name]
+        if (!scale || m.userData.appScaled) continue
+        m.map = m.map.clone()
+        m.map.repeat.multiplyScalar(1 / scale)
+        m.userData.appScaled = true
+      }
+    })
     // siding and shingle courses painted into their color maps (bakeBump.js)
     bakeBumpMaps(house.root)
     if (lite) {

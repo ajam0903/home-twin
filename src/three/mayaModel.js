@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { bakeWhenReady } from './bakeBump.js'
+import { TEXTURE_SCALE } from './textures.js'
 import { LAWN_COLOR, ASPHALT_COLOR } from './buildHouse.js'
 
 // The house as edited in Maya: public/model/house.fbx, with per-material
@@ -59,6 +60,12 @@ export function appMaterial(m, extras, clipPlane, { onBaked } = {}) {
   const flat = FLAT_COLORS[m.name] ?? FLAT_COLORS[m.name.replace(/\d+$/, '')]
   const map = flat ? null : (m.map ?? null)
   if (map) map.anisotropy = 8
+  // fewer repeats for some textures (the FBX texture is this model's own)
+  const scale = TEXTURE_SCALE[m.name.replace(/\d+$/, '').replace(/^mat_/, '')]
+  if (map && scale && !map.userData.appScaled) {
+    map.repeat.multiplyScalar(1 / scale)
+    map.userData.appScaled = true
+  }
   // a texture carries its own color; otherwise the shader color from Maya
   const color = flat ? new THREE.Color(flat) : map ? new THREE.Color(1, 1, 1) : toLinearAsIs(m.color.clone())
   const mat = new THREE.MeshStandardMaterial({

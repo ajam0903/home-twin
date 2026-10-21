@@ -5,6 +5,11 @@ import * as THREE from 'three'
 // a grayscale bump map so the courses catch the light. UVs are in feet (see
 // applyWorldUV), so a texture's repeat is 1 / (its tile size in feet).
 
+// Textures the app draws larger than their tile, so they repeat less, by
+// texture name (the Maya material is mat_<name>): the roof shingles at twice
+// the size (owner's call, Oct 2026)
+export const TEXTURE_SCALE = { shingles: 2 }
+
 let seed = 11
 const rand = () => {
   seed = (seed * 16807) % 2147483647
