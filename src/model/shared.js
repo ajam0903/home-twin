@@ -19,6 +19,9 @@ const db = app ? getFirestore(app) : null
 const auth = app ? getAuth(app) : null
 const homeRef = () => doc(db, 'homes', 'orchard')
 
+// for other admin-only data (the blueprints)
+export const firestore = () => db
+
 export const isAdmin = (user) => !!user && ADMIN_UIDS.includes(user.uid)
 export const signInAdmin = () => signInWithPopup(auth, new GoogleAuthProvider())
 export const signOutAdmin = () => signOut(auth)

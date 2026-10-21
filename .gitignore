@@ -11,3 +11,6 @@ maya/house.mb
 maya/export_prev/
 maya/backups/
 .mayaSwatches/
+
+# Private originals (the blueprints live in Firestore, admin only)
+private/

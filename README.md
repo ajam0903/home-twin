@@ -49,8 +49,12 @@ same thing, updated live. Anyone can read it; only the admin's Google account ca
 - Desktop (1000px and wider): levels and the room list on the left, the 3D model in the middle, details on the right.
 - Phones: full-screen model, level chips at the top, a draggable bottom sheet for rooms, systems and details.
 - Blueprints tab: the original sheets (house, deck, survey) with pan and zoom (pinch on phones).
-  Shown only to the admin (signed in); the public sees the 3D model alone. The image files are
-  still in `public/blueprints`, so anyone with a direct link to one can open it.
+  Shown only to the admin (signed in); the public sees the 3D model alone. The images are
+  private: they live in Firestore (`blueprints/{id}`, bytes in `chunks/{n}`), readable only by
+  the admin's account (`firestore.rules`), not on the site. The originals are in
+  `private/blueprints/` on this computer (not in git). To add or replace a sheet: put the file
+  there, list it in `BLUEPRINTS` (`src/model/house.js`), then on the dev server, signed in,
+  run `window.__uploadBlueprints()` in the browser console.
 - Systems pins start hidden; the Systems button shows them. Dragging from a pin or room label
   moves the view like dragging anywhere else; a tap opens it.
 - In the whole-house view, the Top button shows the lot as a site plan, with deed north on the compass.

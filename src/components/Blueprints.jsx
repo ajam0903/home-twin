@@ -1,8 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BLUEPRINTS } from '../model/house.js'
 import { Icon } from './Icons.jsx'
+import { blueprintUrl } from '../model/blueprintStore.js'
 
-const src = (file) => `${import.meta.env.BASE_URL}blueprints/${file}`
+// A sheet's image URL once it has loaded from the private store, or the
+// error; null while loading
+function useSheet(file) {
+  const [state, setState] = useState({ url: null, error: null })
+  useEffect(() => {
+    let live = true
+    setState({ url: null, error: null })
+    blueprintUrl(file).then(
+      (url) => live && setState({ url, error: null }),
+      (error) => live && setState({ url: null, error }),
+    )
+    return () => {
+      live = false
+    }
+  }, [file])
+  return state
+}
+
+function Thumb({ file }) {
+  const { url } = useSheet(file)
+  return url ? <img src={url} alt="" /> : <span className="thumb-wait" />
+}
 
 export default function Blueprints({ compact }) {
   const [active, setActive] = useState(BLUEPRINTS[1].id)
@@ -12,7 +34,7 @@ export default function Blueprints({ compact }) {
       <nav className="sheet-list" aria-label="Drawing sheets">
         {BLUEPRINTS.map((b) => (
           <button key={b.id} type="button" className={'sheet-thumb' + (b.id === active ? ' on' : '')} onClick={() => setActive(b.id)}>
-            <img src={src(b.file)} alt="" loading="lazy" />
+            <Thumb file={b.file} />
             <span>
               <strong>{b.title}</strong>
               <em>
@@ -22,9 +44,15 @@ export default function Blueprints({ compact }) {
           </button>
         ))}
       </nav>
-      <PanZoom key={sheet.id} image={src(sheet.file)} alt={sheet.title} />
+      <Sheet key={sheet.id} sheet={sheet} />
     </div>
   )
+}
+
+function Sheet({ sheet }) {
+  const { url, error } = useSheet(sheet.file)
+  if (url) return <PanZoom image={url} alt={sheet.title} />
+  return <div className="sheet-wait">{error ? `Could not load this sheet: ${error.message}` : 'Loading the drawing...'}</div>
 }
 
 function PanZoom({ image, alt }) {

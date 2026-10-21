@@ -16,5 +16,14 @@ service cloud.firestore {
       allow write: if isAdmin()
         && request.resource.data.keys().hasOnly(['notes', 'measurements', 'furniture', 'furnitureSeeded', 'updatedAt']);
     }
+
+    // The blueprint images (src/model/blueprintStore.js): the admin only,
+    // reading and writing. Each sheet's bytes are split into chunks.
+    match /blueprints/{sheet} {
+      allow read, write: if isAdmin();
+      match /chunks/{n} {
+        allow read, write: if isAdmin();
+      }
+    }
   }
 }
