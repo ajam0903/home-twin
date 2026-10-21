@@ -5,6 +5,7 @@ import {
 import { roomNoteKey } from '../model/notes.js'
 import { measuredLength } from '../model/measurements.js'
 import { feetInchesText, inchesText } from '../three/measure.js'
+import { sharingEnabled } from '../model/shared.js'
 import { feetInches } from '../model/furniture.js'
 import { Icon } from './Icons.jsx'
 
@@ -59,31 +60,40 @@ export default function DetailPanel({
 function SavedMeasurements({ list, onRename, onRemove, onFocus }) {
   return (
     <Section title={`Saved measurements (${list.length})`}>
-      <ul className="saved-measures">
+      <ul className={'saved-measures' + (onRename ? '' : ' read-only')}>
         {list.map((m) => {
           const len = measuredLength(m)
           return (
             <li key={m.id}>
-              <input
-                value={m.name ?? ''}
-                placeholder="Name it (e.g. sofa wall)"
-                onChange={(e) => onRename?.(m.id, e.target.value)}
-                aria-label="Measurement name"
-              />
+              {onRename ? (
+                <input
+                  value={m.name ?? ''}
+                  placeholder="Name it (e.g. sofa wall)"
+                  onChange={(e) => onRename(m.id, e.target.value)}
+                  aria-label="Measurement name"
+                />
+              ) : (
+                <span className="measure-name">{m.name || 'Measurement'}</span>
+              )}
               <button type="button" className="link" onClick={() => onFocus?.(m)} title="Show it in the view">
                 {feetInchesText(len)} <span>{inchesText(len)}</span>
               </button>
-              <button type="button" className="icon-btn small" onClick={() => onRemove?.(m.id)} aria-label="Delete this measurement">
-                <Icon.close width={14} height={14} />
-              </button>
+              {onRemove && (
+                <button type="button" className="icon-btn small" onClick={() => onRemove(m.id)} aria-label="Delete this measurement">
+                  <Icon.close width={14} height={14} />
+                </button>
+              )}
             </li>
           )
         })}
       </ul>
-      <p className="muted">Saved in this browser.</p>
+      {onRename && <p className="muted">{SAVED_WHERE}</p>}
     </Section>
   )
 }
+
+// Where edits go: the shared copy everyone sees, or just this browser
+const SAVED_WHERE = sharingEnabled ? 'Shared: everyone who opens Home Twin sees it.' : 'Saved in this browser.'
 
 const roomAt = (level, x, y) => ROOMS.find((r) => r.level === level && pointInPoly([x, y], r.poly))
 
@@ -164,6 +174,27 @@ function FloorOverview({ level, furniture, onSelect }) {
 function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDelete }) {
   const room = roomAt(piece.level, piece.x, piece.y)
   const set = (patch) => onChange?.(piece.id, patch)
+  if (!onChange) {
+    // view only
+    return (
+      <div className="detail">
+        {!hideHeader && <Header kicker={`Furniture · ${levelName(piece.level)}`} title={piece.name} onClose={onClose} />}
+        <p className="muted">
+          {feetInches(piece.w)} wide x {feetInches(piece.d)} deep x {feetInches(piece.h)} high
+        </p>
+        {room && (
+          <div className="stats">
+            <div className="stat">
+              <div className="stat-label">Located in</div>
+              <button type="button" className="link" onClick={() => onSelect({ kind: 'room', id: room.id })}>
+                {room.name}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
   return (
     <div className="detail">
       {!hideHeader && <Header kicker={`Furniture · ${levelName(piece.level)}`} title={piece.name} onClose={onClose} />}
@@ -202,7 +233,7 @@ function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDel
           Remove
         </button>
       </div>
-      <p className="muted">Click a piece in the 3D view to select it, then drag it to move it (floor views). Changes are saved in this browser.</p>
+      <p className="muted">Click a piece in the 3D view to select it, then drag it to move it (floor views). {SAVED_WHERE}</p>
     </div>
   )
 }
@@ -261,7 +292,7 @@ function RoomDetail({ room, furniture, onSelect, onClose, hideHeader, note, onNo
         <Stat label="Ceiling" value={room.ceiling} />
         {room.flooring && <Stat label="Flooring" value={FLOORING_NAMES[room.flooring]} />}
       </div>
-      {onNoteChange && <MyNotes value={note} onChange={onNoteChange} />}
+      <MyNotes value={note} onChange={onNoteChange} />
       {room.notes.length > 0 && (
         <Section title="From the drawings">
           <ul className="bullets">
@@ -344,6 +375,16 @@ function ItemDetail({ item, onSelect, onClose, hideHeader }) {
 
 // The owner's own notes for a room: saved as they type, in this browser
 function MyNotes({ value, onChange }) {
+  if (!onChange) {
+    // view only: just the note, when there is one
+    if (!value) return null
+    return (
+      <section className="detail-section my-notes">
+        <h3>Notes</h3>
+        <p className="note-text">{value}</p>
+      </section>
+    )
+  }
   return (
     <section className="detail-section my-notes">
       <h3>My notes</h3>
@@ -353,7 +394,7 @@ function MyNotes({ value, onChange }) {
         placeholder="Paint colors, measurements, what is stored here, things to fix..."
         rows={Math.min(12, Math.max(3, value.split('\n').length + 1))}
       />
-      <p className="muted">Saved in this browser.</p>
+      <p className="muted">{SAVED_WHERE}</p>
     </section>
   )
 }

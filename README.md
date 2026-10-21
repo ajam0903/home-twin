@@ -16,8 +16,24 @@ server is for development only; don't leave it exposed on a network.
 
 Online, the app is on GitHub Pages at https://ajam0903.github.io/home-twin/. Every push to
 `master` rebuilds and redeploys it (`.github/workflows/pages.yml`), so wait a minute or two after
-pushing. The site is public: anyone with the link can open it. Notes, saved measurements and
-furniture moves stay in each browser, so the phone keeps its own.
+pushing. The site is public: anyone with the link can open it.
+
+### Shared data and the admin
+
+Room notes, saved measurements and the furniture layout live in one Firestore document
+(`homes/orchard` in the Firebase project `home-twin-orchard`), so every device and visitor sees the
+same thing, updated live. Anyone can read it; only the admin's Google account can change it.
+
+- Sign in (top right) with the admin account (ajamali0903, Google) to edit. Everyone else sees
+  notes as text, can't add, move or resize furniture, and can take measurements but not save them.
+- `firestore.rules` enforces this (deploy with `firebase deploy --only firestore:rules`); the
+  app only hides the editing controls. To add an editor, add their user id to both
+  `firestore.rules` and `ADMIN_UIDS` in `src/firebaseConfig.js` (ids are under Authentication,
+  Users, in the Firebase console).
+- Each browser keeps a copy, so the app opens with the last data it saw. Signed in as admin on a
+  browser that has notes, measurements or furniture the shared copy doesn't have yet, a banner
+  offers to share them.
+- The shared data is as public as the site. Keep anything private out of notes.
 
 ## Layout
 
@@ -35,14 +51,14 @@ furniture moves stay in each browser, so the phone keeps its own.
   it. Turning the tool off clears unsaved ones. Save on a label keeps it as a thin line in the
   view it was taken in (whole house or a floor), with or without the tool on; click the line to
   open its points and label (and drag a point to change it), click anywhere else to close it.
-  Saved measurements survive a reload (saved in this browser) and are listed in that view's
+  Saved measurements are shared (see Shared data) and are listed in that view's
   overview panel, where you can name them, click the length to fly to one, or delete it. The
   cutaway applies: in a floor view you measure what is below the cut.
 - Related things share one listing (the deck and its posts, ledger, lights and door; all 20
   arborvitae; the fences and gate; the drainage lines; the lot and its survey lines), with a
   titled section for each part.
 - My notes: every room's details have a notes box for your own notes (paint colors, what is
-  stored where...). They save as you type, in this browser, like the furniture; rooms with notes
+  stored where...). They save as you type (shared, like the furniture); rooms with notes
   get a dot in the list, and the search looks through them.
 - The deck counts as outside: with the whole house it is listed under Property and its label
   shows in the 3D view, and picking it there keeps the whole-house view.
@@ -51,8 +67,8 @@ furniture moves stay in each browser, so the phone keeps its own.
   across a piece that is not selected just moves the view), and type its width, depth and height or
   rotate it in the right panel. Walls stop a piece (it slides along them); it can pass through
   a doorway or opening if it fits under the head, and a size or rotation typed in that would push
-  it into a wall moves it clear. The layout is saved in this browser (`src/model/furniture.js`),
-  so it does not follow you to other devices yet.
+  it into a wall moves it clear. The layout is shared (`src/model/furniture.js`, and Shared data
+  above).
 
 ## Editing the model in Maya
 

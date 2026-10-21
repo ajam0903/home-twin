@@ -186,9 +186,10 @@ export class Measure {
         })
         actions.appendChild(btn)
       }
-      if (!entry.saved) button('measure-save', 'Save', 'Save this measurement', () => this.save(entry))
-      button('measure-remove', '×', entry.saved ? 'Delete this saved measurement' : 'Remove this measurement', () => this.remove(entry))
-      el.appendChild(actions)
+      const editable = this.v.editable
+      if (!entry.saved && editable) button('measure-save', 'Save', 'Save this measurement', () => this.save(entry))
+      if (!entry.saved || editable) button('measure-remove', '×', entry.saved ? 'Delete this saved measurement' : 'Remove this measurement', () => this.remove(entry))
+      if (actions.children.length) el.appendChild(actions)
     }
     obj.position.copy(a).add(b).multiplyScalar(0.5)
   }
@@ -214,6 +215,17 @@ export class Measure {
     entry.line.visible = here
     entry.line.material = full ? this.lineMat : this.thinMat
     for (const o of [...entry.dots, entry.label]) o.visible = full
+    // saved ones can be dragged only by someone who can edit
+    for (const d of entry.dots) d.element.classList.toggle('handle', !entry.saved || this.v.editable)
+  }
+
+  // Redraw every label and handle (after the edit permission changed)
+  refreshAll() {
+    for (const e of this.done) {
+      this.setLabel(e.label, e.a, e.b, e)
+      this.showFor(e)
+    }
+    this.v.dirty = true
   }
 
   updateVisibility() {
@@ -273,6 +285,7 @@ export class Measure {
     const el = obj.element
     let dragging = false
     el.addEventListener('pointerdown', (e) => {
+      if (!el.classList.contains('handle')) return
       e.stopPropagation()
       e.preventDefault()
       el.setPointerCapture(e.pointerId)

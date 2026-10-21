@@ -1,17 +1,19 @@
 // Measurements the owner saved: [{ id, a: [x, y, z], b: [x, y, z], view, name }],
-// in three.js feet (view: 'exterior' or a floor id). Saved in this browser,
-// like the furniture layout and the notes.
+// in three.js feet (view: 'exterior' or a floor id). Shared (model/shared.js),
+// with a copy in this browser, like the furniture layout and the notes.
 
 const KEY = 'homeTwin.measurements.v1'
 
 export function loadMeasurements() {
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY))
-    return Array.isArray(saved) ? saved.filter((m) => m && Array.isArray(m.a) && Array.isArray(m.b) && m.view) : []
+    return cleanMeasurements(JSON.parse(localStorage.getItem(KEY)))
   } catch {
     return []
   }
 }
+
+export const cleanMeasurements = (list) =>
+  Array.isArray(list) ? list.filter((m) => m && Array.isArray(m.a) && Array.isArray(m.b) && m.view) : []
 
 export function saveMeasurements(list) {
   try {

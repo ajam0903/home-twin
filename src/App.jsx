@@ -7,9 +7,10 @@ import BottomSheet from './components/BottomSheet.jsx'
 import Blueprints from './components/Blueprints.jsx'
 import { Icon } from './components/Icons.jsx'
 import { HOME, levelName, roomById, itemById, roomLabelPoint } from './model/house.js'
-import { loadFurniture, saveFurniture, settleFurniture } from './model/furniture.js'
-import { loadNotes, saveNotes } from './model/notes.js'
-import { loadMeasurements, saveMeasurements } from './model/measurements.js'
+import { loadFurniture, saveFurniture, settleFurniture, withNewDefaults, defaultFurnitureIds } from './model/furniture.js'
+import { loadNotes, saveNotes, cleanNotes } from './model/notes.js'
+import { loadMeasurements, saveMeasurements, cleanMeasurements } from './model/measurements.js'
+import { useSharedHome, useSharedField, sharingEnabled, signInAdmin, signOutAdmin } from './model/shared.js'
 
 function useMediaQuery(q) {
   const [match, setMatch] = useState(() => window.matchMedia(q).matches)
@@ -36,16 +37,26 @@ export default function App() {
   const [pins, setPins] = useState(true)
   const [sheet, setSheet] = useState('peek')
   const [sheetTab, setSheetTab] = useState('rooms')
-  const [furniture, setFurniture] = useState(loadFurniture)
   const [showFurniture, setShowFurniture] = useState(true)
   const [measure, setMeasure] = useState(false)
   const viewer = useRef(null)
 
-  useEffect(() => saveFurniture(furniture), [furniture])
-
-  // Measurements the owner saved (each in the view it was taken in), saved in this browser
-  const [measurements, setMeasurements] = useState(loadMeasurements)
-  useEffect(() => saveMeasurements(measurements), [measurements])
+  // Notes, saved measurements and the furniture layout are shared: everyone
+  // sees them, only the admin edits them (model/shared.js)
+  const shared = useSharedHome()
+  const { editable } = shared
+  const [furniture, setFurniture, furnitureSync] = useSharedField(shared, 'furniture', {
+    load: loadFurniture,
+    save: saveFurniture,
+    fromShared: (list, data) => withNewDefaults(list, data.furnitureSeeded),
+    toShared: (list) => ({ furniture: list, furnitureSeeded: defaultFurnitureIds() }),
+  })
+  // Measurements the owner saved (each in the view it was taken in)
+  const [measurements, setMeasurements, measurementsSync] = useSharedField(shared, 'measurements', {
+    load: loadMeasurements,
+    save: saveMeasurements,
+    fromShared: cleanMeasurements,
+  })
   const saveMeasurement = useCallback(
     // a new one, or new end points for a saved one (dragged in the view)
     (m) =>
@@ -62,14 +73,13 @@ export default function App() {
   }
   const measureProps = {
     measurements: measurements.filter((m) => m.view === level),
-    onRenameMeasurement: renameMeasurement,
-    onRemoveMeasurement: removeMeasurement,
+    onRenameMeasurement: editable ? renameMeasurement : null,
+    onRemoveMeasurement: editable ? removeMeasurement : null,
     onFocusMeasurement: focusMeasurement,
   }
 
-  // The owner's notes by room, saved in this browser
-  const [notes, setNotes] = useState(loadNotes)
-  useEffect(() => saveNotes(notes), [notes])
+  // The owner's notes by room
+  const [notes, setNotes, notesSync] = useSharedField(shared, 'notes', { load: loadNotes, save: saveNotes, fromShared: cleanNotes })
   const setNote = useCallback((key, text) => {
     setNotes((all) => {
       const next = { ...all }
@@ -115,6 +125,54 @@ export default function App() {
     setFurniture((list) => list.filter((f) => f.id !== id))
     setSelection(null)
   }
+
+  // The admin, signed in on a browser whose notes, measurements or furniture
+  // are not shared yet, can share them (moving them from this browser)
+  const unshared = [
+    notesSync.missing && Object.keys(notes).length > 0 && ['notes', notesSync],
+    measurementsSync.missing && measurements.length > 0 && ['measurements', measurementsSync],
+    furnitureSync.missing && ['furniture layout', furnitureSync],
+  ].filter(Boolean)
+  const [uploading, setUploading] = useState(false)
+  const uploadLocal = async () => {
+    setUploading(true)
+    try {
+      for (const [, sync] of unshared) await sync.upload()
+    } catch (e) {
+      console.warn('Upload failed', e)
+    }
+    setUploading(false)
+  }
+  const unsharedNames = unshared.map(([name]) => name)
+  const shareBanner = sharingEnabled && shared.admin && unshared.length > 0 && (
+    <div className="share-banner" role="status">
+      <span>
+        This browser has {unsharedNames.length > 1 ? `${unsharedNames.slice(0, -1).join(', ')} and ${unsharedNames.at(-1)}` : unsharedNames[0]} that
+        others can't see yet.
+      </span>
+      <button type="button" className="btn" onClick={uploadLocal} disabled={uploading}>
+        {uploading ? 'Sharing...' : 'Share them'}
+      </button>
+    </div>
+  )
+
+  // Sign in to edit (only the admin's account can)
+  const account = sharingEnabled && (
+    <div className="account">
+      {shared.user ? (
+        <>
+          <span className={'account-role' + (shared.admin ? ' admin' : '')}>{shared.admin ? 'Editing' : 'View only'}</span>
+          <button type="button" className="link" onClick={() => signOutAdmin()}>
+            Sign out
+          </button>
+        </>
+      ) : (
+        <button type="button" className="link" onClick={() => signInAdmin().catch((e) => console.warn('Sign-in failed', e))}>
+          Sign in
+        </button>
+      )}
+    </div>
+  )
 
   const changeLevel = (l) => {
     setLevel(l)
@@ -185,6 +243,7 @@ export default function App() {
       furniture={furniture}
       showFurniture={showFurniture}
       onFurnitureMove={moveFurniture}
+      editable={editable}
       measure={measure}
       savedMeasurements={measurements}
       onMeasurementSave={saveMeasurement}
@@ -195,7 +254,7 @@ export default function App() {
   const hint =
     measure ? (desktop ? 'Click two points to measure · drag a point to adjust · Shift: one axis · Esc: cancel' : 'Tap two points to measure · drag a point to adjust')
     : level === 'exterior' ? 'Pick a floor to look inside'
-    : selection?.kind === 'furniture' ? 'Drag the piece to move it'
+    : selection?.kind === 'furniture' && editable ? 'Drag the piece to move it'
     : selection ? null
     : 'Tap a room or a pin for details'
 
@@ -227,12 +286,14 @@ export default function App() {
           </div>
           {tabs}
           <div className="topbar-spacer" />
+          {account}
         </header>
+        {shareBanner}
         {tab === 'model' ? (
           <>
             <aside className="sidebar">
               <LevelPicker value={level} onChange={changeLevel} vertical />
-              <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} notes={notes} />
+              <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} notes={notes} />
             </aside>
             <main className="stage">
               {viewerEl}
@@ -246,10 +307,10 @@ export default function App() {
                 onClose={selection ? () => setSelection(null) : null}
                 level={level}
                 furniture={furniture}
-                onFurnitureChange={updateFurniture}
-                onFurnitureDelete={removeFurniture}
+                onFurnitureChange={editable ? updateFurniture : null}
+                onFurnitureDelete={editable ? removeFurniture : null}
                 notes={notes}
-                onNoteChange={setNote}
+                onNoteChange={editable ? setNote : null}
                 {...measureProps}
               />
             </aside>
@@ -279,7 +340,9 @@ export default function App() {
           <strong>{HOME.title}</strong>
         </div>
         {tabs}
+        {account}
       </header>
+      {shareBanner}
       {tab === 'model' ? (
         <>
           <main className="stage">{viewerEl}</main>
@@ -328,10 +391,10 @@ export default function App() {
                 hideHeader
                 level={level}
                 furniture={furniture}
-                onFurnitureChange={updateFurniture}
-                onFurnitureDelete={removeFurniture}
+                onFurnitureChange={editable ? updateFurniture : null}
+                onFurnitureDelete={editable ? removeFurniture : null}
                 notes={notes}
-                onNoteChange={setNote}
+                onNoteChange={editable ? setNote : null}
               />
             ) : (
               <>
@@ -344,7 +407,7 @@ export default function App() {
                   </button>
                 </div>
                 {sheetTab === 'rooms' ? (
-                  <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={addFurniture} notes={notes} />
+                  <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} notes={notes} />
                 ) : (
                   <DetailPanel selection={null} onSelect={select} level={level} furniture={furniture} {...measureProps} />
                 )}

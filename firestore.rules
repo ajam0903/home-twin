@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Home Twin's shared data (src/model/shared.js): one document with the room
+// notes, saved measurements and furniture layout. Anyone may read it; only
+// the admin's Google account may write it. Keep ADMIN_UIDS in
+// src/firebaseConfig.js in step with isAdmin() (the app hides editing from
+// everyone else; these rules are what enforce it).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && request.auth.uid in ['7Pe9gN2NeAXCWQ5XF7kAA9qTdYb2']; // ajamali0903 (Google)
+    }
+
+    match /homes/orchard {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly(['notes', 'measurements', 'furniture', 'furnitureSeeded', 'updatedAt']);
+    }
+  }
+}

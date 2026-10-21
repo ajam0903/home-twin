@@ -146,6 +146,7 @@ export class Viewer {
     this.measure = new Measure(this)
     this.measure.setResolution(container.clientWidth || 1, container.clientHeight || 1)
     this.measuring = false
+    this.editable = true // furniture moves and saved-measurement edits (the admin, or no sharing)
     this.attachPicking()
 
     // The Maya model, when there is one, replaces the house built from the plans
@@ -327,6 +328,14 @@ export class Viewer {
     if (!on) this.measure.clear()
     this.renderer.domElement.classList.toggle('measuring', on)
     this.dirty = true
+  }
+
+  // Viewers who can't edit still measure, but can't save, move furniture or
+  // change saved measurements
+  setEditable(on) {
+    if (on === this.editable) return
+    this.editable = on
+    this.measure.refreshAll()
   }
 
   // Saved measurements from the app (each shows in the view it was taken in)
@@ -634,7 +643,7 @@ export class Viewer {
       'pointerdown',
       (e) => {
         down = { x: e.clientX, y: e.clientY }
-        if (this.measuring) return // measuring: no furniture dragging
+        if (this.measuring || !this.editable) return // measuring or view only: no furniture dragging
         aim(e)
         const id = furnitureUnder()
         if (!id || !(this.selection?.kind === 'furniture' && this.selection.id === id)) return

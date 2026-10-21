@@ -1,16 +1,17 @@
-// The owner's own notes, by room ('room:kitchen' -> text). Saved in this
-// browser, like the furniture layout, until the app has a backend.
+// The owner's own notes, by room ('room:kitchen' -> text). Shared
+// (model/shared.js), with a copy in this browser.
 
 const KEY = 'homeTwin.notes.v1'
 
 export function loadNotes() {
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY))
-    return saved && typeof saved === 'object' ? saved : {}
+    return cleanNotes(JSON.parse(localStorage.getItem(KEY)))
   } catch {
     return {}
   }
 }
+
+export const cleanNotes = (notes) => (notes && typeof notes === 'object' && !Array.isArray(notes) ? notes : {})
 
 export function saveNotes(notes) {
   try {

@@ -1302,3 +1302,64 @@ details.collapsible[open] summary {
   opacity: 0.75;
   margin-left: 4px;
 }
+
+/* Sign-in and the shared-data banner */
+.account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.account-role {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.account-role.admin {
+  background: #ff8a1f;
+  color: #1d1205;
+}
+.share-banner {
+  position: fixed;
+  z-index: 50;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 32px));
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 2px solid #ff8a1f;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+  font-size: 14px;
+}
+.share-banner span {
+  flex: 1;
+  min-width: 0;
+}
+.share-banner .btn {
+  flex: none;
+}
+.note-text {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+.saved-measures.read-only li {
+  grid-template-columns: 1fr auto;
+}
+.measure-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

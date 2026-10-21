@@ -43,7 +43,7 @@ export const DEFAULT_FURNITURE = [
 const KEY = 'homeTwin.furniture.v1'
 const SEEDED = 'homeTwin.furnitureSeeded.v2'
 
-// Saved in this browser only (per-device convenience until the app has a backend).
+// Kept in this browser, as a copy of the shared layout (see model/shared.js).
 // Defaults added to the app later are placed once into a saved layout; ones
 // the owner removed stay removed. Loading has no side effects (React may call
 // it twice); saving records which defaults have been placed.
@@ -57,17 +57,25 @@ export function loadFurniture() {
   } catch {
     // no saved layout
   }
-  list = list ?? []
-  for (const f of DEFAULT_FURNITURE) {
-    if (!seeded.includes(f.id) && !list.some((g) => g.id === f.id)) list.push({ ...f })
-  }
-  return list
+  return withNewDefaults(list ?? [], seeded)
 }
+
+// A layout plus the defaults it has not had yet (`seeded`: default ids
+// already placed once)
+export function withNewDefaults(list, seeded = []) {
+  const out = Array.isArray(list) ? [...list] : []
+  for (const f of DEFAULT_FURNITURE) {
+    if (!seeded.includes(f.id) && !out.some((g) => g.id === f.id)) out.push({ ...f })
+  }
+  return out
+}
+
+export const defaultFurnitureIds = () => DEFAULT_FURNITURE.map((f) => f.id)
 
 export function saveFurniture(list) {
   try {
     localStorage.setItem(KEY, JSON.stringify(list))
-    localStorage.setItem(SEEDED, JSON.stringify(DEFAULT_FURNITURE.map((f) => f.id)))
+    localStorage.setItem(SEEDED, JSON.stringify(defaultFurnitureIds()))
   } catch {
     // storage unavailable: changes last for this session only
   }

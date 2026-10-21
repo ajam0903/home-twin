@@ -7,7 +7,7 @@ let exportStarted = false
 const ViewerCanvas = forwardRef(function ViewerCanvas(
   {
     level, cut, pins, selection, onSelect, insetTop = 0, insetBottom = 0, furniture, showFurniture, onFurnitureMove,
-    measure = false, savedMeasurements, onMeasurementSave, onMeasurementRemove,
+    editable = true, measure = false, savedMeasurements, onMeasurementSave, onMeasurementRemove,
   },
   ref,
 ) {
@@ -72,6 +72,10 @@ const ViewerCanvas = forwardRef(function ViewerCanvas(
   useEffect(() => {
     viewer.current?.setMeasureMode(measure)
   }, [measure])
+
+  useEffect(() => {
+    viewer.current?.setEditable(editable)
+  }, [editable])
 
   useEffect(() => {
     viewer.current?.setSavedMeasurements(savedMeasurements ?? [])
