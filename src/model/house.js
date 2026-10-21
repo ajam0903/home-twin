@@ -244,7 +244,7 @@ const W = 36.17 // main house width (36'-2")
 // metal studs at 16" o.c. with 1/2" drywall and R-13; ceilings are drywall.
 // The basement under the study wing (the plans' optional foundation) holds a
 // bath and unfinished storage.
-const BSMT = {
+export const BSMT = {
   girderY: 15.2, // dividing walls follow the drop girder and its lally columns
   officeX: 18.75, // the open area | the finished room
   closetX: 19.25, // the closet under the stair, TV room side
@@ -252,7 +252,7 @@ const BSMT = {
   utilityY: 4.6, // the utility room | the closet behind it
   waterX: 25.3, // the water service closet in the right front corner
   waterY: 28.9,
-  wingX: 50.5, // foundation under the study wing (extent estimated)
+  wingX: 56.31, // foundation under the study wing (as the owner modeled it in Maya, Oct 2026)
   wingY0: 3,
   wingY1: 14,
   bathX: 44.7, // the bath's left wall, in the wing
@@ -304,7 +304,7 @@ export const ROOMS = [
     ceiling: BSMT.ceiling,
     notes: [
       'Half wall along the girder line to the TV room',
-      'Sump pit in the right rear corner; doors through the foundation wall to the bath and the storage under the study',
+      'Doors through the foundation wall to the bath and the storage under the study',
       '4" concrete slab, 6 mil vapor barrier on 4" gravel; 12" CMU foundation walls',
       '(2) 2x10 Microlam drop girder on 4" lally columns at about 5\'-9" o.c.',
       'Waterproofing below grade, 4" interior perimeter drain to sump pit',
@@ -1066,9 +1066,9 @@ export const FIXTURES = [
   // Basement
   ...[6.75, 12.5, 18.25, 24, 29.75].map((x) => ({ level: 'B', shape: 'cyl', x, y: 15.2, r: 0.17, z0: 0, z1: 7.4, color: '#7d8590' })),
   { level: 'B', x0: 0.5, y0: 14.95, x1: W - 0.5, y1: 15.45, z0: 7.4, z1: 8.4, color: '#b69a73' },
-  { level: 'B', x0: 2.6, y0: 8.2, x1: 5.2, y1: 10.4, z0: 0, z1: 5, color: '#9aa3ad', name: 'Furnace' },
-  { level: 'B', shape: 'cyl', x: 3.9, y: 6.2, r: 0.95, z0: 0, z1: 5, color: '#c9ced4', name: 'Hot water heater' },
-  { level: 'B', shape: 'cyl', x: 33.2, y: 3.9, r: 0.9, z0: 0, z1: 0.1, color: '#4c5560', name: 'Sump pit' },
+  { level: 'B', x0: 3.66, y0: 5.34, x1: 6.26, y1: 7.54, z0: 0, z1: 5, color: '#9aa3ad', name: 'Furnace' },
+  { level: 'B', shape: 'cyl', x: 1.6, y: 10.97, r: 0.95, z0: 0, z1: 5, color: '#c9ced4', name: 'Hot water heater' },
+  { level: 'B', shape: 'cyl', x: 54.59, y: 4.76, r: 0.9, z0: 0, z1: 0.1, color: '#4c5560', name: 'Sump pit' },
   // Basement bath (2017): shower against the bath's left wall, toilet and sink
   // along the front wall
   { level: 'B', x0: 42.0, y0: 8.2, x1: 44.45, y1: 12.9, z0: 0, z1: 0.3, color: '#dfe6ec', name: 'Shower' },
@@ -1141,16 +1141,16 @@ export const FIXTURES = [
 
 export const ITEMS = [
   {
-    id: 'furnace', level: 'B', at: [3.9, 9.3], z: 5.5, category: 'HVAC', name: 'Furnace',
+    id: 'furnace', level: 'B', at: [4.96, 6.44], z: 5.5, category: 'HVAC', name: 'Furnace',
     details: ['Utility room, basement, next to the water heater', 'Ducts run between 2x10 floor joists at 16" o.c.'],
   },
   {
-    id: 'waterheater', level: 'B', at: [3.9, 6.2], z: 5.5, category: 'Plumbing', name: 'Hot water heater',
+    id: 'waterheater', level: 'B', at: [1.6, 10.97], z: 5.5, category: 'Plumbing', name: 'Hot water heater',
     details: ['Utility room, basement', 'Double joists framed above the mechanical area'],
   },
   {
-    id: 'sump', level: 'B', at: [33.2, 3.9], z: 1.5, category: 'Plumbing', name: 'Sump pit',
-    details: ['Collects the 4" interior perimeter drain', 'Basement, right rear corner'],
+    id: 'sump', level: 'B', at: [54.59, 4.76], z: 1.5, category: 'Plumbing', name: 'Sump pit',
+    details: ['Collects the 4" interior perimeter drain', 'Unfinished storage under the study wing, right rear corner'],
   },
   {
     id: 'panel', level: 'B', at: [0.7, 11.7], z: 4.5, category: 'Electrical', name: 'Electric panel',
@@ -1460,7 +1460,7 @@ export const HOME = {
 export const FLOOR_FACTS = {
   L1: { area: '1,320 sq ft (plans, with the study)', ceiling: `9'-0" (8'-0" in the garage wing)` },
   L2: { area: '1,255 sq ft (plans, incl. the open foyer)', ceiling: `8'-0"` },
-  B: { area: 'about 1,130 sq ft, finished in 2017, plus about 140 sq ft under the study wing', ceiling: `Drywall below the joists (8'-0" to the joists)` },
+  B: { area: 'about 1,130 sq ft, finished in 2017, plus about 200 sq ft under the study wing', ceiling: `Drywall below the joists (8'-0" to the joists)` },
 }
 
 export const BLUEPRINTS = [

@@ -1,8 +1,11 @@
 import * as THREE from 'three'
 import {
-  H, LEVELS, levelById, ROOMS, WALLS, FIXTURES, DECK, SITE, PLANT_TYPES, BAY, STAIR, openingPoint, roomFloor, gradeAt, deckY,
+  H, LEVELS, levelById, ROOMS, WALLS, FIXTURES, DECK, SITE, PLANT_TYPES, BAY, STAIR, BSMT, openingPoint, roomFloor, gradeAt, deckY,
   pointInPoly,
 } from '../model/house.js'
+
+// Outside face of the foundation under the study wing (lawn notch, excavation)
+const WING_OUT = BSMT.wingX + 0.5
 import { shingleTextures, sidingTextures, concreteTexture, applyWorldUV } from './textures.js'
 import { buildForest, forestFloor, clump, limb, thujaGeometry, foliageMaterial, seeded, setVegetationDetail } from './vegetation.js'
 
@@ -376,8 +379,8 @@ export function buildHouse({ lowDetail = false } = {}) {
   const earth = plain('#7a6a58')
   addBox(siteGroup, -0.55, -0.55, 36.72, -0.5, H.basementFloor, -0.12, earth)
   // around the basement under the study wing
-  addBox(siteGroup, 36.17, 2.45, 51.05, 2.5, H.basementFloor, -0.12, earth)
-  addBox(siteGroup, 51, 2.45, 51.05, 14.5, H.basementFloor, -0.12, earth)
+  addBox(siteGroup, 36.17, 2.45, WING_OUT + 0.05, 2.5, H.basementFloor, -0.12, earth)
+  addBox(siteGroup, WING_OUT, 2.45, WING_OUT + 0.05, 14.5, H.basementFloor, -0.12, earth)
   nameSince(mark, 'excavation')
 
   // World-space UVs (feet) for the textured exterior, so shingle courses and
@@ -423,7 +426,7 @@ function buildSite(group, woods, plain) {
   let mark = snap([group])
   // Front and side lawns up to the curb, notched for the basement cutaway
   // (and for the basement under the study wing)
-  flat([[-FAR, 0], [0, 0], [0, 32], [HOUSE_W, 32], [HOUSE_W, 14.5], [51, 14.5], [51, 2.5], [HOUSE_W, 2.5], [HOUSE_W, 0], [FAR, 0], [FAR, curbY], [-FAR, curbY]], -0.02, groundMat)
+  flat([[-FAR, 0], [0, 0], [0, 32], [HOUSE_W, 32], [HOUSE_W, 14.5], [WING_OUT, 14.5], [WING_OUT, 2.5], [HOUSE_W, 2.5], [HOUSE_W, 0], [FAR, 0], [FAR, curbY], [-FAR, curbY]], -0.02, groundMat)
   // Orchard Street, curbs, and the far side
   const farSide = curbY + roadWidth
   paved(addBox(group, -FAR, curbY, FAR, farSide, -0.62, -0.45, asphalt, { receive: true }))
