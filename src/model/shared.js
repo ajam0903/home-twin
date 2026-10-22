@@ -53,21 +53,74 @@ export function useSharedHome() {
   return { user, admin, editable: !sharingEnabled || admin, ...home }
 }
 
+// JSON with sorted keys, to compare two copies regardless of key order
+const stable = (v) =>
+  JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x))
+
+// Edits made before Oct 22 2026 by the signed-in admin never reached the
+// shared copy (a bug: the edit functions kept the "can't write" of the first
+// render, before sign-in finished). Once per browser, a copy of this
+// browser's data that differs from the shared one is kept aside, so the admin
+// can still save it (see `unsynced` below).
+const checkedKey = (field) => `homeTwin.syncChecked.${field}`
+const unsyncedKey = (field) => `homeTwin.unsynced.${field}`
+const store = {
+  get(key) {
+    try {
+      return localStorage.getItem(key)
+    } catch {
+      return null
+    }
+  },
+  set(key, value) {
+    try {
+      if (value == null) localStorage.removeItem(key)
+      else localStorage.setItem(key, value)
+    } catch {
+      // storage unavailable
+    }
+  },
+}
+
 // One shared field. It starts from this browser's copy, follows the shared
 // document, and (for the admin) writes edits back a moment after they stop.
 // `toShared` turns the value into the document fields to write.
 export function useSharedField(shared, field, { load, save, fromShared = (v) => v, toShared = (v) => ({ [field]: v }) }) {
-  const [value, setValue] = useState(load)
+  const initialLocal = useRef(undefined)
+  if (initialLocal.current === undefined) initialLocal.current = load()
+  const [value, setValue] = useState(initialLocal.current)
   const dirty = useRef(false) // a local edit the server has not confirmed yet
   const generation = useRef(0)
   const timer = useRef(null)
   const latest = useRef(value)
   latest.current = value
-  const canWrite = sharingEnabled && shared.admin
+  // read when an edit happens: sign-in finishes after the first render
+  const canWrite = useRef(false)
+  canWrite.current = sharingEnabled && shared.admin
+
+  const [unsynced, setUnsynced] = useState(() => {
+    try {
+      return JSON.parse(store.get(unsyncedKey(field)))
+    } catch {
+      return null
+    }
+  })
 
   const remote = shared.data?.[field]
+  const checked = useRef(false)
   useEffect(() => {
-    if (remote === undefined || dirty.current) return
+    if (remote === undefined) return
+    // once per browser: keep this browser's differing copy aside (see above)
+    if (!checked.current && sharingEnabled && !store.get(checkedKey(field))) {
+      checked.current = true
+      store.set(checkedKey(field), '1')
+      const local = initialLocal.current
+      if (stable(local) !== stable(fromShared(remote, shared.data))) {
+        store.set(unsyncedKey(field), JSON.stringify(local))
+        setUnsynced(local)
+      }
+    }
+    if (dirty.current) return
     setValue(fromShared(remote, shared.data))
   }, [remote]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -92,13 +145,13 @@ export function useSharedField(shared, field, { load, save, fromShared = (v) => 
   const edit = useCallback(
     (update) => {
       setValue(update)
-      if (!canWrite) return
+      if (!canWrite.current) return
       dirty.current = true
       generation.current++
       clearTimeout(timer.current)
       timer.current = setTimeout(flush, 600)
     },
-    [canWrite, flush],
+    [flush],
   )
 
   // don't lose the last keystrokes when the page is closed
@@ -110,5 +163,16 @@ export function useSharedField(shared, field, { load, save, fromShared = (v) => 
   // Share this browser's copy now (moving local data into the shared document)
   const upload = useCallback(() => writeHome(toShared(latest.current)), []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return [value, edit, { missing: shared.loaded && !shared.error && remote === undefined, upload }]
+  // The copy kept aside: save it into the shared one (`merge(shared, kept)`
+  // gives the result), or let it go
+  const resolveUnsynced = useCallback(
+    (merge) => {
+      if (merge && unsynced != null) edit((current) => merge(current, unsynced))
+      store.set(unsyncedKey(field), null)
+      setUnsynced(null)
+    },
+    [edit, field, unsynced],
+  )
+
+  return [value, edit, { missing: shared.loaded && !shared.error && remote === undefined, upload, unsynced, resolveUnsynced }]
 }

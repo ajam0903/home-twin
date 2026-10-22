@@ -159,7 +159,53 @@ export default function App() {
     setUploading(false)
   }
   const unsharedNames = unshared.map(([name]) => name)
-  const shareBanner = sharingEnabled && shared.admin && unshared.length > 0 && (
+  const listNames = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0])
+
+  // Edits this browser made that never reached the shared copy (a bug, fixed
+  // Oct 22 2026; see model/shared.js): save them into it, or let them go
+  const byId = (shared, kept) => [...shared.filter((x) => !kept.some((k) => k.id === x.id)), ...kept]
+  const keepers = [
+    notesSync.unsynced && [
+      'notes',
+      notesSync,
+      (cur, kept) => {
+        const out = { ...cur }
+        for (const [key, list] of Object.entries(kept)) out[key] = byId(cur[key] ?? [], list)
+        return out
+      },
+    ],
+    measurementsSync.unsynced && ['measurements', measurementsSync, (cur, kept) => byId(cur, kept)],
+    furnitureSync.unsynced && ['furniture changes', furnitureSync, (cur, kept) => kept],
+  ].filter(Boolean)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const unsyncedBanner = sharingEnabled && shared.admin && keepers.length > 0 && (
+    <div className="share-banner" role="status">
+      <span>
+        This browser has {listNames(keepers.map(([name]) => name))} that never reached the shared copy, because of a bug that's now
+        fixed.
+      </span>
+      {confirmDiscard ? (
+        <>
+          <button type="button" className="btn danger" onClick={() => keepers.forEach(([, sync]) => sync.resolveUnsynced(null))}>
+            Discard them
+          </button>
+          <button type="button" className="btn" onClick={() => setConfirmDiscard(false)}>
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" className="btn" onClick={() => keepers.forEach(([, sync, merge]) => sync.resolveUnsynced(merge))}>
+            Save them
+          </button>
+          <button type="button" className="btn" onClick={() => setConfirmDiscard(true)}>
+            Discard
+          </button>
+        </>
+      )}
+    </div>
+  )
+  const shareBanner = unsyncedBanner || (sharingEnabled && shared.admin && unshared.length > 0 && (
     <div className="share-banner" role="status">
       <span>
         This browser has {unsharedNames.length > 1 ? `${unsharedNames.slice(0, -1).join(', ')} and ${unsharedNames.at(-1)}` : unsharedNames[0]} that
@@ -169,7 +215,7 @@ export default function App() {
         {uploading ? 'Sharing...' : 'Share them'}
       </button>
     </div>
-  )
+  ))
 
   // Sign in to edit (only the admin's account can)
   const account = sharingEnabled && (
