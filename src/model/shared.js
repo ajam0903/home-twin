@@ -100,7 +100,9 @@ export function useSharedField(shared, field, { load, save, fromShared = (v) => 
 
   const [unsynced, setUnsynced] = useState(() => {
     try {
-      return JSON.parse(store.get(unsyncedKey(field)))
+      const kept = JSON.parse(store.get(unsyncedKey(field)))
+      // an empty copy (kept by an earlier version of this check) has nothing to save
+      return kept && typeof kept === 'object' && Object.keys(kept).length ? kept : null
     } catch {
       return null
     }
@@ -115,7 +117,9 @@ export function useSharedField(shared, field, { load, save, fromShared = (v) => 
       checked.current = true
       store.set(checkedKey(field), '1')
       const local = initialLocal.current
-      if (stable(local) !== stable(fromShared(remote, shared.data))) {
+      // an empty copy has nothing to save (it only predates the shared data)
+      const empty = local == null || (typeof local === 'object' && Object.keys(local).length === 0)
+      if (!empty && stable(local) !== stable(fromShared(remote, shared.data))) {
         store.set(unsyncedKey(field), JSON.stringify(local))
         setUnsynced(local)
       }
