@@ -7,7 +7,7 @@ import {
 // Outside face of the foundation under the study wing (lawn notch, excavation)
 const WING_OUT = BSMT.wingX + 0.5
 import { shingleTextures, sidingTextures, concreteTexture, applyWorldUV } from './textures.js'
-import { buildForest, forestFloor, clump, limb, thujaGeometry, foliageMaterial, seeded, setVegetationDetail } from './vegetation.js'
+import { buildForest, clump, limb, thujaGeometry, foliageMaterial, seeded, setVegetationDetail } from './vegetation.js'
 
 // Every mesh added to `group` since child index `mark` belongs to one named
 // part (a wall, a window, a cabinet, a plant...). The Maya export uses these
@@ -882,9 +882,7 @@ function buildWoods(group) {
     }
   }
   buildForest(group, spots, gradeAt)
-  // Distance into the woods: behind the edge and outside the open backyard
-  const inside = (x, y) => Math.min(edgeY(x) - y - 2, Math.max(lot.x0 - 4 - x, x - lot.x1 - 4, lot.y0 - 4 - y))
-  forestFloor(group, { x0: -60, x1: 112, y0: -150, y1: 4 }, inside, gradeAt)
+  // the ground under the woods is the lawn: one green, no leaf litter (owner's call)
 }
 
 // ------------------------------------------------------------ deck

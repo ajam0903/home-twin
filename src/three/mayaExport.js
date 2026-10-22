@@ -71,8 +71,7 @@ export async function exportForMaya({ onStatus = () => {} } = {}) {
         ? Array.from({ length: o.count }, (_, i) => [o.userData.instanceParts?.[i], i])
         : [[o.userData.part, null]]
       for (const [part, instance] of list) {
-        // the woods group: the maples (trees) and the forest (woods); the
-        // leaf litter stays in the app
+        // the woods group: the maples (trees) and the forest (woods)
         if (!part && groupName === 'trees') continue
         const group = part?.kind === 'tree' ? 'woods' : groupName
         const name = part?.name ?? `${group}_misc`

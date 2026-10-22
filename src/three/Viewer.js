@@ -282,6 +282,7 @@ export class Viewer {
       if (moved || this.dirty || this.tween) {
         if (this.composer) this.composer.render()
         else renderer.render(scene, camera)
+        this.measure?.placeLabels()
         labels.render(scene, camera)
         this.updateCompass()
         this.dirty = false
@@ -553,7 +554,7 @@ export class Viewer {
     }
     if (roomMeshes.length) h.roomMeshes = roomMeshes
 
-    // The woods from Maya replace the generated forest (the leaf litter stays)
+    // The woods from Maya replace the generated forest
     if (woods) {
       for (const o of h.woodsGroup.children.filter((c) => c.userData.forest)) {
         h.woodsGroup.remove(o)
@@ -778,6 +779,16 @@ export class Viewer {
     }
     let down = null
     let drag = null
+    // A tap (select, place a measuring point) is one press that stays put:
+    // a pinch (two fingers at any point), a drag (moved more than a few
+    // pixels, even if it came back) or a long touch is not one
+    const pressed = new Set()
+    let multi = false
+    const isTap = (e) => {
+      if (multi || !down) return false
+      const touch = e.pointerType !== 'mouse'
+      return down.far <= (touch ? 10 : 6) && (!touch || performance.now() - down.t < 500)
+    }
 
     // Capture phase, so pressing on the selected piece of furniture drags it
     // instead of orbiting the camera. Any other piece only gets selected (on
@@ -785,7 +796,13 @@ export class Viewer {
     el.addEventListener(
       'pointerdown',
       (e) => {
-        down = { x: e.clientX, y: e.clientY }
+        pressed.add(e.pointerId)
+        if (pressed.size > 1) {
+          multi = true
+          return
+        }
+        multi = false
+        down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId, far: 0 }
         if (this.measuring || !this.editable) return // measuring or view only: no furniture dragging
         aim(e)
         const id = furnitureUnder()
@@ -802,6 +819,7 @@ export class Viewer {
     // live measuring line, at most once a frame
     let hoverEvent = null
     el.addEventListener('pointermove', (e) => {
+      if (down && e.pointerId === down.id) down.far = Math.max(down.far, Math.hypot(e.clientX - down.x, e.clientY - down.y))
       if (!drag && e.pointerType === 'mouse' && !e.buttons) {
         if (!hoverEvent) {
           requestAnimationFrame(() => {
@@ -832,7 +850,12 @@ export class Viewer {
       this.updateFurnitureOutline()
       this.dirty = true
     })
+    el.addEventListener('pointercancel', (e) => {
+      pressed.delete(e.pointerId)
+      if (down?.id === e.pointerId) down = null
+    })
     el.addEventListener('pointerup', (e) => {
+      pressed.delete(e.pointerId)
       if (drag) {
         const d = drag
         drag = null
@@ -842,12 +865,13 @@ export class Viewer {
         this.onSelect?.({ kind: 'furniture', id: d.id })
         return
       }
-      if (!down) return
-      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y)
+      if (!down || e.pointerId !== down.id) return
+      down.far = Math.max(down.far, Math.hypot(e.clientX - down.x, e.clientY - down.y))
+      const tap = isTap(e)
       down = null
       const labelTap = this.labelTap
       this.labelTap = null
-      if (moved > 6) return
+      if (!tap) return
       // the press started on a pin or room label: open it
       if (labelTap) {
         labelTap()

@@ -128,6 +128,16 @@ export default function App() {
     [desktop, furniture, level],
   )
 
+  // A tap on a pin or room label in the 3D view. On phones it opens the panel
+  // (select does), and tapping the one already open lowers the panel again
+  const selectFromView = (sel) => {
+    if (!desktop && sel && selection && sel.kind === selection.kind && sel.id === selection.id) {
+      setSheet((s) => (s === 'peek' ? 'half' : 'peek'))
+      return
+    }
+    select(sel)
+  }
+
   const addFurniture = (preset, lvl) => {
     const room = selection?.kind === 'room' && roomById[selection.id]?.level === lvl ? roomById[selection.id] : null
     const [x, y] = room ? roomLabelPoint(room) : LEVEL_CENTER[lvl]
@@ -288,8 +298,8 @@ export default function App() {
     </div>
   )
 
-  // On phones the header and bottom sheet cover part of the canvas.
-  const insetTop = desktop ? 0 : 60
+  // On phones the floor and tool bars and the bottom sheet cover part of the canvas.
+  const insetTop = desktop ? 0 : 112
   const insetBottom = desktop ? 0 : sheet === 'peek' ? 92 : Math.round(window.innerHeight * 0.48)
   const viewerEl = (
     <ViewerCanvas
@@ -298,7 +308,7 @@ export default function App() {
       cut={cut}
       pins={pins}
       selection={selection}
-      onSelect={select}
+      onSelect={selectFromView}
       insetTop={insetTop}
       insetBottom={insetBottom}
       furniture={furniture}
@@ -397,16 +407,6 @@ export default function App() {
     : null
   return (
     <div className={'app mobile tab-' + tab}>
-      <header className="m-top">
-        <div className="brand compact">
-          <span className="brand-mark">
-            <Icon.home />
-          </span>
-          <strong>{HOME.title}</strong>
-        </div>
-        {tabs}
-        {account}
-      </header>
       {shareBanner}
       {tab === 'model' ? (
         <>
@@ -445,6 +445,11 @@ export default function App() {
                     <div className="kicker">Explore</div>
                     <strong>Rooms, systems &amp; home facts</strong>
                   </div>
+                  {account && (
+                    <div className="peek-account" onPointerDown={(e) => e.stopPropagation()}>
+                      {account}
+                    </div>
+                  )}
                 </div>
               )
             }
@@ -469,6 +474,11 @@ export default function App() {
                   <button type="button" className={sheetTab === 'home' ? 'on' : ''} onClick={() => setSheetTab('home')}>
                     {level === 'exterior' ? 'Home info' : 'Floor info'}
                   </button>
+                  {showPlans && (
+                    <button type="button" onClick={() => setTab('plans')}>
+                      Blueprints
+                    </button>
+                  )}
                 </div>
                 {sheetTab === 'rooms' ? (
                   <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} notes={notes} />
@@ -481,6 +491,10 @@ export default function App() {
         </>
       ) : (
         <main className="plans-stage">
+          <button type="button" className="plans-back" onClick={() => setTab('model')}>
+            <Icon.cube />
+            <span>3D model</span>
+          </button>
           {showPlans && <Blueprints compact />}
         </main>
       )}

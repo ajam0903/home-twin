@@ -47,7 +47,10 @@ same thing, updated live. Anyone can read it; only the admin's Google account ca
 ## Layout
 
 - Desktop (1000px and wider): levels and the room list on the left, the 3D model in the middle, details on the right.
-- Phones: full-screen model, level chips at the top, a draggable bottom sheet for rooms, systems and details.
+- Phones: full-screen model with no banner: the floor bar on top, the tool bar across under it,
+  and a draggable bottom sheet for rooms, systems and details (Sign in at the right of its header;
+  for the admin, Blueprints beside Rooms & systems and Home info). Tapping a pin or room label
+  opens the sheet; tapping the same one again lowers it.
 - Blueprints tab: the original sheets (house, deck, survey) with pan and zoom (pinch on phones).
   Shown only to the admin (signed in); the public sees the 3D model alone. The images are
   private: they live in Firestore (`blueprints/{id}`, bytes in `chunks/{n}`), readable only by
@@ -55,13 +58,16 @@ same thing, updated live. Anyone can read it; only the admin's Google account ca
   `private/blueprints/` on this computer (not in git). To add or replace a sheet: put the file
   there, list it in `BLUEPRINTS` (`src/model/house.js`), then on the dev server, signed in,
   run `window.__uploadBlueprints()` in the browser console.
-- Systems pins start hidden; the Systems button shows them. Dragging from a pin or room label
+- Systems pins start hidden; the Systems button shows them. A tap (select, place a measuring
+  point) is one finger that stays put: a pinch, a drag or a long press never counts as one.
+  Dragging from a pin or room label
   moves the view like dragging anywhere else; a tap opens it.
 - In the whole-house view, the Top button shows the lot as a site plan, with deed north on the compass.
 - The room list shows the selected floor only (everything for Whole house). With a floor selected
   and nothing picked, the right panel shows that floor's overview.
 - Measure: turn on the Measure tool, then click (or tap) two points on anything you can see:
-  walls, floors, cabinets, furniture, the yard. The label gives the length of the line in feet
+  walls, floors, cabinets, furniture, the yard. The label (beside the line, so the line and its
+  ends stay visible) gives the length of the line in feet
   and inches to the nearest 1/4", with the total inches under it (1'-5 3/4" over "17 3/4 inches"). Points snap to a nearby corner
   (shown square). Drag either point afterwards to adjust it (it snaps the same way). Shift keeps
   a point square to the other one; Esc drops a half-done measurement; the x on a label removes
@@ -140,8 +146,7 @@ Keep these conventions so the app's features keep working:
 - Every object is named for what it is (`L1_extwall_04`, `L1_extwall_04_window2`,
   `fixture` names like `L1_Refrigerator_01`, `japanese_maple_01`, `thuja_07`...).
 
-What stays in the app: the leaf litter under the woods (it follows the surveyed edge of the
-woods), the furniture, lighting, labels and pins, and the room and item information. Room labels, the room
+What stays in the app: the furniture, lighting, labels and pins, and the room and item information. Room labels, the room
 list and the furniture's wall checks still use the plan data in `src/model/house.js`, so after
 moving walls or rooms in Maya, update the matching numbers there too.
 
@@ -169,7 +174,7 @@ with `?export=maya` (it writes `maya/export`), then run `npm run maya:build`.
   concrete), drawn on canvases and mapped in world feet so courses line up. The lawn and asphalt
   are flat colors (`LAWN_COLOR`, `ASPHALT_COLOR` in `buildHouse.js`).
 - `src/three/vegetation.js`: trees and shrubs built from noise-shaped foliage clumps (the woods
-  with an understory and leaf litter, the maples, serviceberry, cherry, thujas and bed shrubs).
+  with an understory, the maples, serviceberry, cherry, thujas and bed shrubs).
 - `src/three/Viewer.js`: camera, controls, lighting (sun with soft shadows over the lot; the
   woods on the neighboring lots receive shadows but cast none, since their shadows would end in
   a straight edge where the sun's shadow area stops; sky light, a cool

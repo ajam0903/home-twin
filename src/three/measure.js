@@ -233,6 +233,42 @@ export class Measure {
     this.v.dirty = true
   }
 
+  // Keep each label beside its line rather than on it, so the line and its
+  // end points stay visible (and can be grabbed): shifted off the midpoint,
+  // square to the line as it looks on screen, toward its upper side, by half
+  // the label plus a gap. Runs before every label render.
+  placeLabels() {
+    const canvas = this.v.renderer.domElement
+    const W = canvas.clientWidth / 2
+    const Hh = canvas.clientHeight / 2
+    const cam = this.v.camera
+    const pa = new THREE.Vector3()
+    const pb = new THREE.Vector3()
+    const place = (label, a, b) => {
+      if (!label?.visible) return
+      const el = label.element
+      const w = el.offsetWidth
+      const h = el.offsetHeight
+      if (!w || !h) return
+      pa.copy(a).project(cam)
+      pb.copy(b).project(cam)
+      const dx = (pb.x - pa.x) * W
+      const dy = -(pb.y - pa.y) * Hh // screen y points down
+      const len = Math.hypot(dx, dy)
+      let nx = 0
+      let ny = -1
+      if (len > 1) {
+        nx = -dy / len
+        ny = dx / len
+        if (ny > 0) [nx, ny] = [-nx, -ny]
+      }
+      const d = 0.5 * (Math.abs(nx) * w + Math.abs(ny) * h) + 10
+      label.center.set(0.5 - (nx * d) / w, 0.5 - (ny * d) / h)
+    }
+    for (const e of this.done) place(e.label, e.a, e.b)
+    if (this.preview && this.first) place(this.preview.label, this.first.point, this.preview.end ?? this.first.point)
+  }
+
   // Redraw after a point moved
   refresh(entry) {
     const { a, b } = entry
@@ -270,9 +306,10 @@ export class Measure {
     const a = this.first.point
     const b = shift ? this.constrain(a, hit.point) : hit.point
     if (!this.preview) {
-      this.preview = { line: this.line(a, b), label: this.label(a, b) }
+      this.preview = { line: this.line(a, b), label: this.label(a, b), end: b.clone() }
       this.preview.label.element.classList.add('live')
     } else {
+      this.preview.end.copy(b)
       this.preview.line.geometry.setPositions([a.x, a.y, a.z, b.x, b.y, b.z])
       this.setLabel(this.preview.label, a, b)
     }
