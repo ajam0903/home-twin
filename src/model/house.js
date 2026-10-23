@@ -752,7 +752,7 @@ export const ROOMS = [
     name: 'Upper hall',
     type: 'hall',
     poly: [
-      [8.1, 12], [25.67, 12], [25.67, 13.33], [22.67, 13.33], [22.67, STAIR.landY1], [STAIR.topX, STAIR.landY1],
+      [8.1, 12], [22.67, 12], [22.67, STAIR.landY1], [STAIR.topX, STAIR.landY1],
       [STAIR.topX, STAIR.landY0], [13.5, STAIR.landY0], [13.5, 20.4], [9.8, 20.4], [9.8, 17.9], [8.1, 17.9],
     ],
     labelAt: [19.5, 14.6],
@@ -1022,9 +1022,12 @@ export const WALLS = [
     level: 'L2', a: [22.67, 13.33], b: [W, 13.33], t: INT,
     openings: [door(29.1, 2.67, '2\'-8" x 6\'-8" wood door', { style: 'interior' })],
   },
+  // Master bedroom's left wall: it runs back to the hall wall (no jog in the
+  // hall; the corner behind it belongs to the master suite), with a pair of
+  // 2'-6" doors onto the stair landing (plans sheet 3; owner's photo)
   {
-    level: 'L2', a: [22.67, 13.33], b: [22.67, D], t: INT,
-    openings: [door(16.8, 2.5, '2\'-6" x 6\'-8" wood door', { style: 'interior' })],
+    level: 'L2', a: [22.67, 12], b: [22.67, D], t: INT,
+    openings: [door(16.2, 5, '(2) 2\'-6" x 6\'-8" wood doors (a pair)', { style: 'interior' })],
   },
   {
     level: 'L2', a: [8.1, 12], b: [8.1, 17.9], t: INT,
