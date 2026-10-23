@@ -37,6 +37,10 @@ export default function App() {
   const [pins, setPins] = useState(false) // systems pins, off until the Systems button turns them on
   const [sheet, setSheet] = useState('peek')
   const [sheetTab, setSheetTab] = useState('rooms')
+  // Smaller desktop windows: the details panel floats over the 3D view and
+  // opens when something is picked, so the view keeps most of the width
+  const compact = useMediaQuery('(max-width: 1279px)')
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [showFurniture, setShowFurniture] = useState(true)
   const [measure, setMeasure] = useState(false)
   const viewer = useRef(null)
@@ -348,6 +352,12 @@ export default function App() {
   )
 
   if (desktop) {
+    const overlay = compact && tab === 'model'
+    const showDetails = !overlay || detailsOpen || !!selection
+    const closeDetails = () => {
+      setSelection(null)
+      setDetailsOpen(false)
+    }
     return (
       <div className={'app desktop tab-' + tab}>
         <header className="topbar">
@@ -371,16 +381,26 @@ export default function App() {
               <LevelPicker value={level} onChange={changeLevel} vertical />
               <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} notes={notes} />
             </aside>
-            <main className="stage">
+            <main className={'stage' + (overlay && showDetails ? ' beside-details' : '')}>
               {viewerEl}
               {tools}
               {hint && <div className="hint">{hint}</div>}
+              {overlay && !showDetails && (
+                <button type="button" className="details-toggle" onClick={() => setDetailsOpen(true)}>
+                  Details
+                </button>
+              )}
             </main>
-            <aside className="details">
+            <aside className={'details' + (overlay ? ' overlay' : '')} hidden={!showDetails}>
+              {overlay && !selection && (
+                <button type="button" className="icon-btn details-close" onClick={closeDetails} aria-label="Close details">
+                  <Icon.close />
+                </button>
+              )}
               <DetailPanel
                 selection={selection}
                 onSelect={select}
-                onClose={selection ? () => setSelection(null) : null}
+                onClose={selection ? (overlay ? closeDetails : () => setSelection(null)) : null}
                 level={level}
                 furniture={furniture}
                 onFurnitureChange={editable ? updateFurniture : null}

@@ -47,6 +47,9 @@ same thing, updated live. Anyone can read it; only the admin's Google account ca
 ## Layout
 
 - Desktop (1000px and wider): levels and the room list on the left, the 3D model in the middle, details on the right.
+- Desktop windows: the side panels shrink as the window narrows. Under 1280px wide the details
+  panel floats over the right of the 3D view instead of taking a column: it opens when you pick
+  something, × closes it, and Details brings it back. A narrow 3D view shows the tool bar as icons.
 - Phones: full-screen model with no banner: the floor bar on top, the tool bar across under it,
   and a draggable bottom sheet for rooms, systems and details (Sign in at the right of its header;
   for the admin, Blueprints beside Rooms & systems and Home info). Tapping a pin or room label

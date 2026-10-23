@@ -90,7 +90,8 @@ h3 {
 }
 .app.desktop {
   display: grid;
-  grid-template-columns: 290px 1fr 360px;
+  /* the side panels give up width as the window narrows (the 3D view keeps it) */
+  grid-template-columns: clamp(230px, 20vw, 290px) 1fr clamp(300px, 25vw, 360px);
   grid-template-rows: 60px 1fr;
   grid-template-areas: 'top top top' 'side stage details';
 }
@@ -178,6 +179,7 @@ h3 {
   grid-area: stage;
   position: relative;
   overflow: hidden;
+  container-type: inline-size;
   background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
   min-width: 0;
 }
@@ -1486,4 +1488,78 @@ details.collapsible[open] summary {
   padding: 24px;
   color: var(--muted);
   text-align: center;
+}
+
+/* Smaller desktop windows (under 1280px): two columns, the details panel
+   floats over the right of the 3D view (see App) */
+@media (max-width: 1279px) {
+  .app.desktop {
+    grid-template-columns: clamp(220px, 22vw, 270px) 1fr;
+    grid-template-areas: 'top top' 'side stage';
+  }
+  .app.desktop.tab-plans {
+    grid-template-areas: 'top top' 'plans plans';
+  }
+  .details.overlay {
+    grid-area: stage;
+    z-index: 6;
+    justify-self: end;
+    align-self: stretch;
+    position: relative;
+    width: min(360px, 85%);
+    margin: 12px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .details.overlay[hidden] {
+    display: none;
+  }
+  .brand span:not(.brand-mark) {
+    display: none;
+  }
+  .brand {
+    min-width: 0;
+  }
+}
+.details-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+}
+.details-toggle {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  right: 14px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+/* A narrow 3D view: the tool bar shows icons only (each keeps its tooltip) */
+@container (max-width: 700px) {
+  .desktop .view-tools .tool span {
+    display: none;
+  }
+  .desktop .view-tools .tool {
+    padding: 8px 10px;
+  }
+}
+/* the floating details panel open: the tool bar and hint center in the space
+   left beside it, the tool bar as icons only */
+.desktop .stage.beside-details .view-tools,
+.desktop .stage.beside-details .hint {
+  left: calc((100% - min(360px, 85%) - 24px) / 2);
+}
+.desktop .stage.beside-details .view-tools .tool span {
+  display: none;
+}
+.desktop .stage.beside-details .view-tools .tool {
+  padding: 8px 10px;
 }
