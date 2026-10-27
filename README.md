@@ -36,18 +36,21 @@ admin's Firebase sign-in token, which it checks against Google's public keys and
 `localhost:5180` may call it. Calls bill the Claude Console API credits of the key's organization.
 
 - Add furniture: on a floor's list (signed in), the "Add furniture" button under the search box
-  opens one card with a photo button, a link field and the standard pieces. A photo goes (shrunk on the device) to Claude Opus 5.5, which reads the name, kind, size in
-  inches, brand, model and price from a tag, or estimates the size from a photo of the piece.
-  Or paste a product page link (a shared "title + link" works): Claude opens the page with its
-  web fetch tool, or searches for the product when the store blocks it (up to about 30 s). A
-  card shows what it read for you to correct, then adds the piece to the selected room (or the
+  opens one card: a prompt field ("Describe, paste a link or attach a photo") with a camera
+  button, and a dropdown of standard pieces. Claude Opus 5.5 reads whatever is sent:
+  - a photo (attached or pasted, shrunk on the device), with any words typed beside it: the name,
+    kind, size, brand, model and price from a tag, or the size estimated from the piece itself;
+  - a product page link (a shared "title + link" works; other words go along as a note): Claude
+    opens the page with its web fetch tool, or searches when the store blocks it (up to ~30 s);
+  - a description alone: Claude searches the web when it names a product, else estimates.
+  A card shows what it read for you to correct, then adds the piece to the selected room (or the
   floor).
 - The look: Claude also describes how the piece looks (`look` on a piece: main, accent and leg
   colors; arm style and height; tight, tufted or loose-cushion back; seat height and cushions;
   throw pillows; leg style and height; table top shape and base; headboard; drawers and doors),
   and `src/three/furniture.js` draws from it. A photo of the piece gives the truest colors; a
   link gives the store's default color option.
-- Restyle: a selected piece's panel (signed in) has "Restyle from a photo" and a link field.
+- Restyle: a selected piece's panel (signed in) has the same prompt field.
   "Apply the look" keeps its place and size; "Look and size" also takes the size read.
 - Deploy: `cd worker && npx wrangler deploy` (logged in with `npx wrangler login`).
 - New or expired key: make one in the Claude Console, then `cd worker && npx wrangler secret put

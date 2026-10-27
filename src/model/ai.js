@@ -44,16 +44,24 @@ async function call(path, body) {
 }
 
 // A furniture piece from a product page link (Claude opens the page, or
-// searches for the product when the store blocks it); same shape as below
-export async function furnitureFromLink(url, room) {
-  const { piece } = await call('/furniture-from-link', { url, room })
+// searches for the product when the store blocks it); same shape as below.
+// note: the owner's own words sent along, which win where they differ.
+export async function furnitureFromLink(url, room, note) {
+  const { piece } = await call('/furniture-from-link', { url, room, note })
   return piece
 }
 
 // A furniture piece read from a photo of its tag or of the piece itself:
-// { name, kind, w, d, h (inches), estimated, brand, model, price, notes }
-export async function furnitureFromPhoto(file, room) {
+// { name, kind, w, d, h (inches), estimated, brand, model, price, notes, look }
+export async function furnitureFromPhoto(file, room, note) {
   const image = await shrink(file)
-  const { piece } = await call('/furniture-from-photo', { image, mediaType: 'image/jpeg', room })
+  const { piece } = await call('/furniture-from-photo', { image, mediaType: 'image/jpeg', room, note })
+  return piece
+}
+
+// A furniture piece from the owner's description (Claude searches the web
+// when it names a product); same shape as above
+export async function furnitureFromText(text, room) {
+  const { piece } = await call('/furniture-from-text', { text, room })
   return piece
 }

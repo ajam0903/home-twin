@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { furnitureFromPhoto, furnitureFromLink } from '../model/ai.js'
+import { useEffect, useRef, useState } from 'react'
+import { furnitureFromPhoto, furnitureFromLink, furnitureFromText } from '../model/ai.js'
 import { Icon } from './Icons.jsx'
 
 const KINDS = [
@@ -11,7 +11,7 @@ const KINDS = [
   ['cabinet', 'Dresser, shelf or other'],
 ]
 
-// The first web link in pasted text (a share often adds a title around it)
+// The first web link in text (a share often adds a title around it)
 const linkIn = (text) => text.match(/https?:\/\/\S+/)?.[0]?.replace(/[)\].,;]+$/, '')
 
 // The look without its empty parts (what a piece stores)
@@ -21,15 +21,27 @@ const compactLook = (look) => {
 }
 const infoOf = (p) => [p.brand, p.model, p.price, p.notes].filter(Boolean).join(' · ') || undefined
 
-// Read a piece through the AI helper from a photo (of its store tag, or of the
-// piece itself) or from a link to its product page. Calls onRead(piece, what).
+const WAIT = {
+  photo: 'Reading the photo...',
+  link: 'Opening the product page. A link can take up to half a minute.',
+  description: 'Reading your description...',
+}
+
+// Read a piece through the AI helper from what the owner gave: a photo (of the
+// piece or its store tag) with any words about it, a product link (the rest of
+// the text goes along), or a description alone. Calls onRead(piece, what).
 function useReader(roomName) {
   const [state, setState] = useState({ step: 'idle' })
-  const read = async (source, onRead) => {
-    const what = source.url ? 'link' : 'photo'
+  const read = async ({ text, file }, onRead) => {
+    const url = file ? null : linkIn(text)
+    const note = url ? text.replace(url, '').trim() : text.trim()
+    const what = file ? 'photo' : url ? 'link' : 'description'
     setState({ step: 'reading', what })
     try {
-      const p = source.url ? await furnitureFromLink(source.url, roomName) : await furnitureFromPhoto(source.file, roomName)
+      const p = file
+        ? await furnitureFromPhoto(file, roomName, note)
+        : url ? await furnitureFromLink(url, roomName, note)
+        : await furnitureFromText(note, roomName)
       onRead({ ...p, w: Math.round(p.w), d: Math.round(p.d), h: Math.round(p.h) }, what)
       setState({ step: 'done', what })
     } catch (err) {
@@ -39,69 +51,98 @@ function useReader(roomName) {
   return [state, setState, read]
 }
 
-function SourcePicker({ id, state, setState, onSource, photoLabel }) {
+// One field for everything: type a description, paste a link (or an image),
+// or attach a photo with the camera button. Enter sends.
+function PromptBox({ id, state, onSend, placeholder = 'Describe, paste a link or attach a photo' }) {
   const input = useRef(null)
-  const [link, setLink] = useState('')
+  const [text, setText] = useState('')
+  const [file, setFile] = useState(null)
+  const [preview, setPreview] = useState(null)
   const reading = state.step === 'reading'
+
+  useEffect(() => {
+    if (!file) return setPreview(null)
+    const url = URL.createObjectURL(file)
+    setPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [file])
+
+  const send = () => {
+    if (reading || (!text.trim() && !file)) return
+    onSend({ text, file })
+    setText('')
+    setFile(null)
+  }
+
   return (
-    <>
-      <input
-        ref={input}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) onSource({ file })
-          e.target.value = ''
-        }}
-      />
-      <button type="button" className="add-furniture photo" onClick={() => input.current?.click()} disabled={reading}>
-        <Icon.camera width={16} height={16} />
-        <span>{reading && state.what === 'photo' ? 'Reading the photo...' : photoLabel}</span>
-      </button>
+    <div className="prompt-wrap">
       <form
-        className="link-furniture"
+        className={'prompt-box' + (reading ? ' busy' : '')}
         onSubmit={(e) => {
           e.preventDefault()
-          const url = linkIn(link)
-          if (url) {
-            setLink('')
-            onSource({ url })
-          } else setState({ step: 'error', message: 'Paste a product page link (https://...).' })
+          send()
         }}
       >
-        <input
+        {preview && (
+          <div className="prompt-photo">
+            <img src={preview} alt="Attached photo" />
+            <button type="button" className="prompt-photo-x" onClick={() => setFile(null)} aria-label="Remove the photo" disabled={reading}>
+              <Icon.close width={12} height={12} />
+            </button>
+          </div>
+        )}
+        <textarea
           id={id}
-          type="url"
-          inputMode="url"
-          value={link}
-          onChange={(e) => setLink(e.target.value)}
-          onPaste={(e) => {
-            // a shared link often arrives with a title around it
-            const url = linkIn(e.clipboardData.getData('text'))
-            if (url) {
+          rows={2}
+          value={text}
+          placeholder={file ? 'Add a note (optional)' : placeholder}
+          aria-label="Describe the piece, paste a link or attach a photo"
+          disabled={reading}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              setLink(url)
+              send()
             }
           }}
-          placeholder="Or paste a product link"
-          aria-label="Product link"
-          disabled={reading}
+          onPaste={(e) => {
+            // a pasted image becomes the attached photo
+            const image = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'))
+            if (image) {
+              e.preventDefault()
+              setFile(image)
+            }
+          }}
         />
-        <button type="submit" className="btn" disabled={!link.trim() || reading}>
-          {reading && state.what === 'link' ? 'Reading...' : 'Read'}
-        </button>
+        <div className="prompt-actions">
+          <button type="button" className="icon-btn ghost" onClick={() => input.current?.click()} aria-label="Attach a photo" title="Attach a photo" disabled={reading}>
+            <Icon.camera width={18} height={18} />
+          </button>
+          <button type="submit" className="btn prompt-send" disabled={reading || (!text.trim() && !file)}>
+            {reading ? 'Reading...' : 'Read'}
+          </button>
+        </div>
+        <input
+          ref={input}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) setFile(f)
+            e.target.value = ''
+          }}
+        />
       </form>
-      {reading && state.what === 'link' && <p className="muted">Opening the product page. A link can take up to half a minute.</p>}
+      {reading && <p className="muted">{WAIT[state.what]}</p>}
       {state.step === 'error' && <p className="photo-error">{state.message}</p>}
-    </>
+    </div>
   )
 }
 
-// The one Add furniture button: opens a card to add a piece from a photo (of
-// the item or its store tag) or a product link, which Claude reads and the
-// owner checks, or a standard piece in one tap.
+// The one Add furniture button: opens a card to add a piece from a
+// description, a product link or a photo (of the item or its tag), which
+// Claude reads and the owner checks, or a standard piece from the list.
 export default function AddFurniture({ placeName, roomName, presets, ai, onAdd }) {
   const [open, setOpen] = useState(false)
   const [state, setState, read] = useReader(roomName)
@@ -143,37 +184,31 @@ export default function AddFurniture({ placeName, roomName, presets, ai, onAdd }
       </div>
       {!reviewing && (
         <>
-          {ai && (
-            <div className="photo-furniture">
-              <SourcePicker id="furniture-link" state={state} setState={setState} photoLabel="Photo of the item or its tag" onSource={(s) => read(s, setPiece)} />
-            </div>
-          )}
-          <p className="add-card-sub">{ai ? 'Or a standard piece' : 'A standard piece'}</p>
-          <div className="preset-grid">
-            {presets.map((p) => (
-              <button
-                key={p.name}
-                type="button"
-                className="preset"
-                disabled={state.step === 'reading'}
-                onClick={() => {
-                  onAdd(p)
-                  close()
-                }}
-              >
-                <span>{p.name}</span>
-                <em>
-                  {p.w}" x {p.d}"
-                </em>
-              </button>
+          {ai && <PromptBox id="furniture-prompt" state={state} onSend={(s) => read(s, setPiece)} />}
+          <select
+            className="preset-select"
+            value=""
+            disabled={state.step === 'reading'}
+            onChange={(e) => {
+              if (e.target.value === '') return
+              onAdd(presets[Number(e.target.value)])
+              close()
+            }}
+            aria-label="Add a standard piece"
+          >
+            <option value="">{ai ? 'Or pick a standard piece...' : 'Pick a standard piece...'}</option>
+            {presets.map((p, i) => (
+              <option key={p.name} value={i}>
+                {p.name} ({p.w}" x {p.d}")
+              </option>
             ))}
-          </div>
+          </select>
         </>
       )}
       {reviewing && (
         <div className="photo-review">
           <p className="kicker">
-            {state.what === 'link' ? 'From the link' : 'From the photo'}
+            {{ link: 'From the link', photo: 'From the photo', description: 'From your description' }[state.what]}
             {piece.estimated ? ' · size estimated, check it' : ''}
           </p>
           <label className="field">
@@ -221,8 +256,8 @@ export default function AddFurniture({ placeName, roomName, presets, ai, onAdd }
   )
 }
 
-// Make a placed piece look like the real one, from a photo of it or its
-// product link. Its place stays; the size changes only when asked.
+// Make a placed piece look like the real one, from a photo of it, its product
+// link or a description. Its place stays; the size changes only when asked.
 export function RestyleFurniture({ piece, roomName, onChange }) {
   const [state, setState, read] = useReader(roomName)
   const [found, setFound] = useState(null)
@@ -240,12 +275,10 @@ export function RestyleFurniture({ piece, roomName, onChange }) {
   return (
     <div className="photo-furniture restyle">
       <p className="muted">Doesn't look right? Show Claude the real piece and its 3D shape will follow: colors, arms, back, cushions, legs.</p>
-      {!reviewing && (
-        <SourcePicker id="restyle-link" state={state} setState={setState} photoLabel="Restyle from a photo" onSource={(s) => read(s, setFound)} />
-      )}
+      {!reviewing && <PromptBox id="restyle-prompt" state={state} onSend={(s) => read(s, setFound)} />}
       {reviewing && (
         <div className="photo-review">
-          <p className="kicker">{state.what === 'link' ? 'From the link' : 'From the photo'}</p>
+          <p className="kicker">{{ link: 'From the link', photo: 'From the photo', description: 'From your description' }[state.what]}</p>
           <p>
             <strong>{found.name}</strong>
             <br />

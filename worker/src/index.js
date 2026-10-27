@@ -5,8 +5,10 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 // as a secret (ANTHROPIC_API_KEY), and every request must carry the admin's
 // Firebase sign-in token (checked against Google's public keys).
 //
-// POST /furniture-from-photo  { image: <base64 JPEG>, mediaType?, room? }
-// POST /furniture-from-link   { url, room? }
+// POST /furniture-from-photo  { image: <base64 JPEG>, mediaType?, room?, note? }
+// POST /furniture-from-link   { url, room?, note? }
+// POST /furniture-from-text   { text, room? }
+//   (note: the owner's own words about the piece, sent with a photo or link)
 //   -> { piece: { name, kind, w, d, h, estimated, brand, model, price, notes, look } }
 
 const FIREBASE_KEYS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'))
@@ -88,6 +90,16 @@ const linkPrompt = (url) => `Return the furniture product at this link for placi
 - If no dimensions can be found anywhere, estimate them for that product and set estimated to true.
 ${RULES}`
 
+const textPrompt = (text) => `The owner of a house described a piece of furniture in their own words:
+<description>
+${text}
+</description>
+Return the piece for placing in a 3D model of the house.
+- If it names a specific product (brand, store or model), search the web for its dimensions and details.
+- Use any size, color or style the owner gives. Otherwise estimate a typical size for what they describe and set estimated to true.
+${RULES}`
+
+const MAX_NOTE = 1000
 const json = (body, status, cors) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...cors } })
 
 function corsFor(request, env) {
@@ -155,9 +167,12 @@ async function readPiece(env, content, tools, what) {
 }
 
 const forRoom = (prompt, room) => (room ? `${prompt}\nIt is going in the ${room}.` : prompt)
+// The owner's words with a photo or link take priority over what Claude reads
+const withNote = (prompt, note) =>
+  typeof note === 'string' && note.trim() ? `${prompt}\nThe owner adds (follow it where it differs): ${note.trim().slice(0, MAX_NOTE)}` : prompt
 
 async function furnitureFromPhoto(body, env) {
-  const { image, mediaType = 'image/jpeg', room } = body ?? {}
+  const { image, mediaType = 'image/jpeg', room, note } = body ?? {}
   if (typeof image !== 'string' || !image) return [{ error: 'No photo was sent.' }, 400]
   if (image.length * 0.75 > MAX_IMAGE_BYTES) return [{ error: 'The photo is too large.' }, 413]
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) return [{ error: 'Send a JPEG, PNG or WebP photo.' }, 400]
@@ -165,7 +180,7 @@ async function furnitureFromPhoto(body, env) {
     env,
     [
       { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
-      { type: 'text', text: forRoom(PHOTO_PROMPT, room) },
+      { type: 'text', text: withNote(forRoom(PHOTO_PROMPT, room), note) },
     ],
     null,
     'photo',
@@ -173,7 +188,7 @@ async function furnitureFromPhoto(body, env) {
 }
 
 async function furnitureFromLink(body, env) {
-  const { url, room } = body ?? {}
+  const { url, room, note } = body ?? {}
   let link
   try {
     link = new URL(url)
@@ -183,12 +198,24 @@ async function furnitureFromLink(body, env) {
   if (!['http:', 'https:'].includes(link.protocol) || url.length > 2000) return [{ error: 'Paste a web page link (https://...).' }, 400]
   return readPiece(
     env,
-    [{ type: 'text', text: forRoom(linkPrompt(link.href), room) }],
+    [{ type: 'text', text: withNote(forRoom(linkPrompt(link.href), room), note) }],
     [
       { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 },
       { type: 'web_search_20260209', name: 'web_search', max_uses: 3 },
     ],
     'link',
+  )
+}
+
+async function furnitureFromText(body, env) {
+  const { text, room } = body ?? {}
+  if (typeof text !== 'string' || !text.trim()) return [{ error: 'Describe the piece first.' }, 400]
+  if (text.length > MAX_NOTE) return [{ error: 'That description is too long.' }, 400]
+  return readPiece(
+    env,
+    [{ type: 'text', text: forRoom(textPrompt(text.trim()), room) }],
+    [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
+    'description',
   )
 }
 
@@ -203,7 +230,7 @@ export default {
     const path = new URL(request.url).pathname
     try {
       const body = await request.json()
-      const handler = { '/furniture-from-photo': furnitureFromPhoto, '/furniture-from-link': furnitureFromLink }[path]
+      const handler = { '/furniture-from-photo': furnitureFromPhoto, '/furniture-from-link': furnitureFromLink, '/furniture-from-text': furnitureFromText }[path]
       if (handler) {
         const [result, status] = await handler(body, env)
         return json(result, status, cors)
