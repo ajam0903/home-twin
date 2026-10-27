@@ -146,6 +146,7 @@ export default function App() {
     const room = selection?.kind === 'room' && roomById[selection.id]?.level === lvl ? roomById[selection.id] : null
     const [x, y] = room ? roomLabelPoint(room) : LEVEL_CENTER[lvl]
     const piece = settleFurniture({ id: `f${Date.now()}`, kind: preset.kind, name: preset.name, level: lvl, x, y, w: preset.w, d: preset.d, h: preset.h, rot: 0 })
+    if (preset.info) piece.info = preset.info // from a tag photo: brand, model, price
     setFurniture((list) => [...list, piece])
     setShowFurniture(true)
     setSelection({ kind: 'furniture', id: piece.id })

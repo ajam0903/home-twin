@@ -27,6 +27,22 @@ If a browser drops the 3D view anyway (low graphics memory, a driver reset), the
 graphics chip and when it happened, and from then on that device starts in light mode: no
 shadows, 1x pixels, no background woods. `?lite=0` turns light mode off again, `?lite=1` forces it.
 
+### AI helper (Claude)
+
+`worker/` is a Cloudflare Worker (`https://home-twin-ai.ajamali0903.workers.dev`) that holds the
+Claude API key as a secret and answers only the signed-in admin: every request carries the
+admin's Firebase sign-in token, which it checks against Google's public keys and `ADMIN_UIDS`
+(`worker/wrangler.toml`; keep it in step with `src/firebaseConfig.js`), and only the site and
+`localhost:5180` may call it. Calls bill the Claude Console API credits of the key's organization.
+
+- Add from a photo: on a floor's room list (signed in), "Add from a photo of the tag" sends a
+  photo (shrunk on the device) to Claude Opus 5.5, which reads the name, kind, size in inches,
+  brand, model and price, or estimates the size from a photo of the piece itself. A card shows
+  what it read for you to correct, then adds the piece to the selected room (or the floor).
+- Deploy: `cd worker && npx wrangler deploy` (logged in with `npx wrangler login`).
+- New or expired key: make one in the Claude Console, then `cd worker && npx wrangler secret put
+  ANTHROPIC_API_KEY` and paste it at the prompt. The app says when the key has expired.
+
 ### Shared data and the admin
 
 Room notes, saved measurements and the furniture layout live in one Firestore document

@@ -3,6 +3,8 @@ import { ROOMS, ITEMS, levelById, roomArea, plantedInfo } from '../model/house.j
 import { FURNITURE_PRESETS, feetInches } from '../model/furniture.js'
 import { roomNoteKey, notesText } from '../model/notes.js'
 import { Icon } from './Icons.jsx'
+import PhotoFurniture from './PhotoFurniture.jsx'
+import { aiAvailable } from '../model/ai.js'
 
 // First floor first; the property goes with the whole house.
 const ORDER = ['L1', 'L2', 'B', 'site']
@@ -31,6 +33,8 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
   }, [query, level, furniture, notes])
 
   const isSel = (kind, id) => selection?.kind === kind && selection.id === id
+  // new furniture lands in the selected room (see addFurniture in App)
+  const selectedRoom = selection?.kind === 'room' ? ROOMS.find((r) => r.id === selection.id) : null
 
   return (
     <div className="room-list">
@@ -110,6 +114,13 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
                     ))}
                   </select>
                 </label>
+              )}
+              {level === g.id && onAddFurniture && aiAvailable && (
+                <PhotoFurniture
+                  roomName={selectedRoom?.level === g.id ? selectedRoom.name : null}
+                  placeName={selectedRoom?.level === g.id ? selectedRoom.name : groupName(g.id)}
+                  onAdd={(preset) => onAddFurniture(preset, g.id)}
+                />
               )}
             </>
           )}

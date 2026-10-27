@@ -1,0 +1,14 @@
+# Home Twin's AI helper (see src/index.js). The Claude API key is a secret:
+#   npx wrangler secret put ANTHROPIC_API_KEY
+name = "home-twin-ai"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Firebase project whose sign-in tokens are accepted, and the accounts allowed
+# (keep in step with ADMIN_UIDS in ../src/firebaseConfig.js)
+FIREBASE_PROJECT = "home-twin-orchard"
+ADMIN_UIDS = "7Pe9gN2NeAXCWQ5XF7kAA9qTdYb2"
+# Pages that may call it
+ALLOWED_ORIGINS = "https://ajam0903.github.io,http://localhost:5180"

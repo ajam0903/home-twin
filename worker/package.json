@@ -1,0 +1,17 @@
+{
+  "name": "home-twin-ai",
+  "private": true,
+  "type": "module",
+  "description": "Home Twin's AI helper: a Cloudflare Worker that holds the Claude API key and answers the signed-in admin only",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0",
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "wrangler": "4.150.0"
+  }
+}

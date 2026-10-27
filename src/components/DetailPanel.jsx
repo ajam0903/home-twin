@@ -184,6 +184,7 @@ function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDel
         <p className="muted">
           {feetInches(piece.w)} wide x {feetInches(piece.d)} deep x {feetInches(piece.h)} high
         </p>
+        {piece.info && <p className="muted">{piece.info}</p>}
         {room && (
           <div className="stats">
             <div className="stat">
@@ -212,6 +213,7 @@ function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDel
       <p className="muted">
         {feetInches(piece.w)} wide x {feetInches(piece.d)} deep x {feetInches(piece.h)} high
       </p>
+      {piece.info && <p className="muted">{piece.info}</p>}
       <div className="stats">
         <div className="stat">
           <div className="stat-label">Located in</div>

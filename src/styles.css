@@ -1563,3 +1563,49 @@ details.collapsible[open] summary {
 .desktop .stage.beside-details .view-tools .tool {
   padding: 8px 10px;
 }
+
+/* Add furniture from a photo (the AI helper) */
+.photo-furniture {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+.add-furniture.photo {
+  width: 100%;
+  min-height: 40px;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.add-furniture.photo:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.photo-error {
+  margin: 0;
+  font-size: 13px;
+  color: #d9463b;
+}
+.photo-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  background: var(--panel-2);
+}
+.photo-review .kicker {
+  margin: 0;
+}
+.photo-review select {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}

@@ -21,6 +21,8 @@ const homeRef = () => doc(db, 'homes', 'orchard')
 
 // for other admin-only data (the blueprints)
 export const firestore = () => db
+// the signed-in user's Firebase token, for the AI helper (worker/), or null
+export const adminIdToken = () => auth?.currentUser?.getIdToken() ?? Promise.resolve(null)
 
 export const isAdmin = (user) => !!user && ADMIN_UIDS.includes(user.uid)
 export const signInAdmin = () => signInWithPopup(auth, new GoogleAuthProvider())

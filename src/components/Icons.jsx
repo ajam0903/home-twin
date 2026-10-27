@@ -43,6 +43,9 @@ export const Icon = {
   ruler: (p) => (
     <svg {...base} {...p}><path d="M3.5 16.5 16.5 3.5l4 4-13 13z" /><path d="M7 13l1.8 1.8M10 10l1.8 1.8M13 7l1.8 1.8" /></svg>
   ),
+  camera: (p) => (
+    <svg {...base} {...p}><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+  ),
   fit: (p) => (
     <svg {...base} {...p}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
   ),
