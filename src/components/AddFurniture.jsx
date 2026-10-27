@@ -99,11 +99,18 @@ function SourcePicker({ id, state, setState, onSource, photoLabel }) {
   )
 }
 
-// Add a piece from a photo or link: Claude reads it, then the owner checks the
-// result and adds it.
-export default function PhotoFurniture({ placeName, roomName, onAdd }) {
+// The one Add furniture button: opens a card to add a piece from a photo (of
+// the item or its store tag) or a product link, which Claude reads and the
+// owner checks, or a standard piece in one tap.
+export default function AddFurniture({ placeName, roomName, presets, ai, onAdd }) {
+  const [open, setOpen] = useState(false)
   const [state, setState, read] = useReader(roomName)
   const [piece, setPiece] = useState(null)
+  const close = () => {
+    setOpen(false)
+    setPiece(null)
+    setState({ step: 'idle' })
+  }
 
   const set = (patch) => setPiece((p) => ({ ...p, ...patch }))
   const size = (key) => (
@@ -118,10 +125,50 @@ export default function PhotoFurniture({ placeName, roomName, onAdd }) {
   const valid = piece && piece.name.trim() && [piece.w, piece.d, piece.h].every((v) => Number(v) > 0 && Number(v) < 600)
   const reviewing = state.step === 'done' && piece
 
+  if (!open) {
+    return (
+      <button type="button" className="add-furniture-btn" onClick={() => setOpen(true)}>
+        <Icon.plus width={18} height={18} />
+        <span>Add furniture</span>
+      </button>
+    )
+  }
   return (
-    <div className="photo-furniture">
+    <div className="add-card">
+      <div className="add-card-head">
+        <span className="kicker">Add to {placeName}</span>
+        <button type="button" className="icon-btn ghost" onClick={close} aria-label="Close">
+          <Icon.close width={16} height={16} />
+        </button>
+      </div>
       {!reviewing && (
-        <SourcePicker id="furniture-link" state={state} setState={setState} photoLabel="Add from a photo (tag or item)" onSource={(s) => read(s, setPiece)} />
+        <>
+          {ai && (
+            <div className="photo-furniture">
+              <SourcePicker id="furniture-link" state={state} setState={setState} photoLabel="Photo of the item or its tag" onSource={(s) => read(s, setPiece)} />
+            </div>
+          )}
+          <p className="add-card-sub">{ai ? 'Or a standard piece' : 'A standard piece'}</p>
+          <div className="preset-grid">
+            {presets.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                className="preset"
+                disabled={state.step === 'reading'}
+                onClick={() => {
+                  onAdd(p)
+                  close()
+                }}
+              >
+                <span>{p.name}</span>
+                <em>
+                  {p.w}" x {p.d}"
+                </em>
+              </button>
+            ))}
+          </div>
+        </>
       )}
       {reviewing && (
         <div className="photo-review">
@@ -159,14 +206,13 @@ export default function PhotoFurniture({ placeName, roomName, onAdd }) {
                   kind: piece.kind, name: piece.name.trim(), w: Number(piece.w), d: Number(piece.d), h: Number(piece.h),
                   info: infoOf(piece), look: compactLook(piece.look),
                 })
-                setPiece(null)
-                setState({ step: 'idle' })
+                close()
               }}
             >
               Add to {placeName}
             </button>
             <button type="button" className="btn" onClick={() => setState({ step: 'idle' })}>
-              Cancel
+              Back
             </button>
           </div>
         </div>

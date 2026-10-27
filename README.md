@@ -35,8 +35,8 @@ admin's Firebase sign-in token, which it checks against Google's public keys and
 (`worker/wrangler.toml`; keep it in step with `src/firebaseConfig.js`), and only the site and
 `localhost:5180` may call it. Calls bill the Claude Console API credits of the key's organization.
 
-- Add from a photo or a link: on a floor's room list (signed in), "Add from a photo (tag or item)"
-  sends a photo (shrunk on the device) to Claude Opus 5.5, which reads the name, kind, size in
+- Add furniture: on a floor's list (signed in), the "Add furniture" button under the search box
+  opens one card with a photo button, a link field and the standard pieces. A photo (shrunk on the device) to Claude Opus 5.5, which reads the name, kind, size in
   inches, brand, model and price from a tag, or estimates the size from a photo of the piece.
   Or paste a product page link (a shared "title + link" works): Claude opens the page with its
   web fetch tool, or searches for the product when the store blocks it (up to about 30 s). A

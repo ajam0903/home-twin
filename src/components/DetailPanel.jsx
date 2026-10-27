@@ -8,7 +8,7 @@ import { feetInchesText, inchesText } from '../three/measure.js'
 import { sharingEnabled } from '../model/shared.js'
 import { feetInches } from '../model/furniture.js'
 import { aiAvailable } from '../model/ai.js'
-import { RestyleFurniture } from './PhotoFurniture.jsx'
+import { RestyleFurniture } from './AddFurniture.jsx'
 import { Icon } from './Icons.jsx'
 
 export default function DetailPanel({

@@ -3,7 +3,7 @@ import { ROOMS, ITEMS, levelById, roomArea, plantedInfo } from '../model/house.j
 import { FURNITURE_PRESETS, feetInches } from '../model/furniture.js'
 import { roomNoteKey, notesText } from '../model/notes.js'
 import { Icon } from './Icons.jsx'
-import PhotoFurniture from './PhotoFurniture.jsx'
+import AddFurniture from './AddFurniture.jsx'
 import { aiAvailable } from '../model/ai.js'
 
 // First floor first; the property goes with the whole house.
@@ -47,6 +47,15 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
           </button>
         )}
       </label>
+      {onAddFurniture && levelById[level] && (
+        <AddFurniture
+          ai={aiAvailable}
+          presets={FURNITURE_PRESETS}
+          roomName={selectedRoom?.level === level ? selectedRoom.name : null}
+          placeName={selectedRoom?.level === level ? selectedRoom.name : groupName(level)}
+          onAdd={(preset) => onAddFurniture(preset, level)}
+        />
+      )}
       {groups.map((g) => (
         <section key={g.id} className={'group' + (level === g.id ? ' current' : '')}>
           <h3>{groupName(g.id)}</h3>
@@ -96,32 +105,6 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
                   </li>
                 ))}
               </ul>
-              {level === g.id && onAddFurniture && (
-                <label className="add-furniture">
-                  <Icon.plus width={16} height={16} />
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value !== '') onAddFurniture(FURNITURE_PRESETS[Number(e.target.value)], g.id)
-                    }}
-                    aria-label="Add furniture"
-                  >
-                    <option value="">Add furniture…</option>
-                    {FURNITURE_PRESETS.map((p, i) => (
-                      <option key={p.name} value={i}>
-                        {p.name} ({p.w}" x {p.d}")
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {level === g.id && onAddFurniture && aiAvailable && (
-                <PhotoFurniture
-                  roomName={selectedRoom?.level === g.id ? selectedRoom.name : null}
-                  placeName={selectedRoom?.level === g.id ? selectedRoom.name : groupName(g.id)}
-                  onAdd={(preset) => onAddFurniture(preset, g.id)}
-                />
-              )}
             </>
           )}
         </section>
