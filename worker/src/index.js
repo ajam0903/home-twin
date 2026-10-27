@@ -6,6 +6,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 // Firebase sign-in token (checked against Google's public keys).
 //
 // POST /furniture-from-photo  { image: <base64 JPEG>, mediaType?, room? }
+// POST /furniture-from-link   { url, room? }
 //   -> { piece: { name, kind, w, d, h, estimated, brand, model, price, notes } }
 
 const FIREBASE_KEYS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'))
@@ -24,18 +25,27 @@ const PIECE_SCHEMA = {
     brand: { type: ['string', 'null'] },
     model: { type: ['string', 'null'] },
     price: { type: ['string', 'null'], description: 'Price as printed, with currency, or null' },
-    notes: { type: ['string', 'null'], description: 'Anything worth keeping from the tag (color, material, SKU), or null' },
+    notes: { type: ['string', 'null'], description: 'Product details worth keeping, such as color, material, size option or SKU, in under 15 words; or null. Not how you found it.' },
   },
   required: ['name', 'kind', 'w', 'd', 'h', 'estimated', 'brand', 'model', 'price', 'notes'],
   additionalProperties: false,
 }
 
-const PROMPT = `This photo is either a furniture store tag or label, or a piece of furniture itself.
-Return the piece for placing in a 3D model of a house.
-- Read the dimensions from the tag when it shows them. Width is side to side, depth front to back, height floor to top. Convert centimeters (or feet) to inches. Tags often print W x D x H; when they don't say, use the usual order for that kind of furniture.
-- With no tag, or no dimensions on it, estimate the size from the photo and set estimated to true.
+const RULES = `- Width is side to side, depth front to back, height floor to top. Convert centimeters (or feet) to inches. When dimensions aren't labeled, use the usual order for that kind of furniture.
 - kind is the closest of: bed, sofa (sofas, sectionals, armchairs), table (tables, desks), chair, stool, cabinet (dressers, nightstands, bookcases, TV stands, storage, anything else).
-- Keep name short. Use null for anything the photo doesn't show.`
+- Keep name short. Use null for anything you couldn't find.`
+
+const PHOTO_PROMPT = `This photo is either a furniture store tag or label, or a piece of furniture itself.
+Return the piece for placing in a 3D model of a house.
+- Read the dimensions from the tag when it shows them.
+- With no tag, or no dimensions on it, estimate the size from the photo and set estimated to true.
+${RULES}`
+
+const linkPrompt = (url) => `Return the furniture product at this link for placing in a 3D model of a house: ${url}
+- Open the page and read the product's name, overall dimensions, brand, model and price. If the page can't be read, search the web for the same product (from the store and words in the link).
+- When several sizes or configurations are listed, use the one the link points to, or else the most common one, and say which in notes.
+- If no dimensions can be found anywhere, estimate them for that product and set estimated to true.
+${RULES}`
 
 const json = (body, status, cors) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...cors } })
 
@@ -68,33 +78,31 @@ async function admin(request, env) {
   }
 }
 
-async function furnitureFromPhoto(body, env) {
-  const { image, mediaType = 'image/jpeg', room } = body ?? {}
-  if (typeof image !== 'string' || !image) return [{ error: 'No photo was sent.' }, 400]
-  if (image.length * 0.75 > MAX_IMAGE_BYTES) return [{ error: 'The photo is too large.' }, 413]
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) return [{ error: 'Send a JPEG, PNG or WebP photo.' }, 400]
-
+// One piece from Claude: `content` is the user turn, `tools` any server tools
+// (web fetch and search for a link). A server-tool turn can pause; it is
+// resumed by sending the conversation back as it is.
+async function readPiece(env, content, tools, what) {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
-  const response = await client.beta.messages.create({
-    model: 'claude-opus-5-5',
-    max_tokens: 4000,
-    // a declined request is retried on Anthropic's recommended model for that case
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: PIECE_SCHEMA } },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
-          { type: 'text', text: room ? `${PROMPT}\nIt is going in the ${room}.` : PROMPT },
-        ],
-      },
-    ],
-  })
-  if (response.stop_reason === 'refusal') return [{ error: 'Claude declined to read this photo. Try another one.' }, 422]
-  if (response.stop_reason === 'max_tokens') return [{ error: 'The answer was cut off. Try again.' }, 502]
-  const text = response.content.find((b) => b.type === 'text')?.text
+  const messages = [{ role: 'user', content }]
+  let response
+  for (let turn = 0; turn < 5; turn++) {
+    response = await client.beta.messages.create({
+      model: 'claude-opus-5-5',
+      max_tokens: 8000,
+      // a declined request is retried on Anthropic's recommended model for that case
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: PIECE_SCHEMA } },
+      ...(tools ? { tools } : {}),
+      messages,
+    })
+    if (response.stop_reason !== 'pause_turn') break
+    messages.push({ role: 'assistant', content: response.content })
+  }
+  if (response.stop_reason === 'refusal') return [{ error: `Claude declined to read this ${what}. Try another one.` }, 422]
+  if (response.stop_reason === 'max_tokens' || response.stop_reason === 'pause_turn') return [{ error: 'The answer was cut off. Try again.' }, 502]
+  // the structured answer is the last text block (web tools add others before it)
+  const text = response.content.filter((b) => b.type === 'text').at(-1)?.text
   let piece
   try {
     piece = JSON.parse(text)
@@ -102,6 +110,44 @@ async function furnitureFromPhoto(body, env) {
     return [{ error: 'Could not read the answer. Try again.' }, 502]
   }
   return [{ piece, usage: response.usage }, 200]
+}
+
+const forRoom = (prompt, room) => (room ? `${prompt}\nIt is going in the ${room}.` : prompt)
+
+async function furnitureFromPhoto(body, env) {
+  const { image, mediaType = 'image/jpeg', room } = body ?? {}
+  if (typeof image !== 'string' || !image) return [{ error: 'No photo was sent.' }, 400]
+  if (image.length * 0.75 > MAX_IMAGE_BYTES) return [{ error: 'The photo is too large.' }, 413]
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) return [{ error: 'Send a JPEG, PNG or WebP photo.' }, 400]
+  return readPiece(
+    env,
+    [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
+      { type: 'text', text: forRoom(PHOTO_PROMPT, room) },
+    ],
+    null,
+    'photo',
+  )
+}
+
+async function furnitureFromLink(body, env) {
+  const { url, room } = body ?? {}
+  let link
+  try {
+    link = new URL(url)
+  } catch {
+    return [{ error: 'That is not a link. Paste the product page address.' }, 400]
+  }
+  if (!['http:', 'https:'].includes(link.protocol) || url.length > 2000) return [{ error: 'Paste a web page link (https://...).' }, 400]
+  return readPiece(
+    env,
+    [{ type: 'text', text: forRoom(linkPrompt(link.href), room) }],
+    [
+      { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 },
+      { type: 'web_search_20260209', name: 'web_search', max_uses: 3 },
+    ],
+    'link',
+  )
 }
 
 export default {
@@ -115,8 +161,9 @@ export default {
     const path = new URL(request.url).pathname
     try {
       const body = await request.json()
-      if (path === '/furniture-from-photo') {
-        const [result, status] = await furnitureFromPhoto(body, env)
+      const handler = { '/furniture-from-photo': furnitureFromPhoto, '/furniture-from-link': furnitureFromLink }[path]
+      if (handler) {
+        const [result, status] = await handler(body, env)
         return json(result, status, cors)
       }
       return json({ error: 'Unknown request.' }, 404, cors)

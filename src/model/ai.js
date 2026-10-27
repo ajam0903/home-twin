@@ -43,6 +43,13 @@ async function call(path, body) {
   return data
 }
 
+// A furniture piece from a product page link (Claude opens the page, or
+// searches for the product when the store blocks it); same shape as below
+export async function furnitureFromLink(url, room) {
+  const { piece } = await call('/furniture-from-link', { url, room })
+  return piece
+}
+
 // A furniture piece read from a photo of its tag or of the piece itself:
 // { name, kind, w, d, h (inches), estimated, brand, model, price, notes }
 export async function furnitureFromPhoto(file, room) {

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { furnitureFromPhoto } from '../model/ai.js'
+import { furnitureFromPhoto, furnitureFromLink } from '../model/ai.js'
 import { Icon } from './Icons.jsx'
 
 const KINDS = [
@@ -11,20 +11,26 @@ const KINDS = [
   ['cabinet', 'Dresser, shelf or other'],
 ]
 
-// Add a piece from a photo of its store tag (or of the piece itself): Claude
-// reads it through the AI helper, then the owner checks the result and adds it.
+// The first web link in pasted text (a share often adds a title around it)
+const linkIn = (text) => text.match(/https?:\/\/\S+/)?.[0]?.replace(/[)\].,;]+$/, '')
+
+// Add a piece from a photo (of its store tag, or of the piece itself) or from
+// a link to its product page: Claude reads it through the AI helper, then the
+// owner checks the result and adds it.
 export default function PhotoFurniture({ placeName, roomName, onAdd }) {
   const input = useRef(null)
   const [state, setState] = useState({ step: 'idle' })
   const [piece, setPiece] = useState(null)
+  const [link, setLink] = useState('')
 
-  const read = async (file) => {
-    if (!file) return
-    setState({ step: 'reading' })
+  const read = async (source) => {
+    if (!source) return
+    setState({ step: 'reading', what: source.url ? 'link' : 'photo' })
     try {
-      const p = await furnitureFromPhoto(file, roomName)
+      const p = source.url ? await furnitureFromLink(source.url, roomName) : await furnitureFromPhoto(source.file, roomName)
+      if (source.url) setLink('')
       setPiece({ ...p, w: Math.round(p.w), d: Math.round(p.d), h: Math.round(p.h) })
-      setState({ step: 'review' })
+      setState({ step: 'review', what: source.url ? 'link' : 'photo' })
     } catch (err) {
       setState({ step: 'error', message: err.message })
     }
@@ -49,20 +55,58 @@ export default function PhotoFurniture({ placeName, roomName, onAdd }) {
         accept="image/*"
         hidden
         onChange={(e) => {
-          read(e.target.files?.[0])
+          const file = e.target.files?.[0]
+          if (file) read({ file })
           e.target.value = ''
         }}
       />
       {state.step !== 'review' && (
-        <button type="button" className="add-furniture photo" onClick={() => input.current?.click()} disabled={state.step === 'reading'}>
-          <Icon.camera width={16} height={16} />
-          <span>{state.step === 'reading' ? 'Reading the photo...' : 'Add from a photo of the tag'}</span>
-        </button>
+        <>
+          <button type="button" className="add-furniture photo" onClick={() => input.current?.click()} disabled={state.step === 'reading'}>
+            <Icon.camera width={16} height={16} />
+            <span>{state.step === 'reading' && state.what === 'photo' ? 'Reading the photo...' : 'Add from a photo (tag or item)'}</span>
+          </button>
+          <form
+            className="link-furniture"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const url = linkIn(link)
+              if (url) read({ url })
+              else setState({ step: 'error', message: 'Paste a product page link (https://...).' })
+            }}
+          >
+            <input
+              id="furniture-link"
+              type="url"
+              inputMode="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              onPaste={(e) => {
+                // a shared link often arrives with a title around it
+                const url = linkIn(e.clipboardData.getData('text'))
+                if (url) {
+                  e.preventDefault()
+                  setLink(url)
+                }
+              }}
+              placeholder="Or paste a product link"
+              aria-label="Product link"
+              disabled={state.step === 'reading'}
+            />
+            <button type="submit" className="btn" disabled={!link.trim() || state.step === 'reading'}>
+              {state.step === 'reading' && state.what === 'link' ? 'Reading...' : 'Read'}
+            </button>
+          </form>
+          {state.step === 'reading' && state.what === 'link' && <p className="muted">Opening the product page. A link can take up to half a minute.</p>}
+        </>
       )}
       {state.step === 'error' && <p className="photo-error">{state.message}</p>}
       {state.step === 'review' && piece && (
         <div className="photo-review">
-          <p className="kicker">From the photo{piece.estimated ? ' · size estimated, check it' : ''}</p>
+          <p className="kicker">
+            {state.what === 'link' ? 'From the link' : 'From the photo'}
+            {piece.estimated ? ' · size estimated, check it' : ''}
+          </p>
           <label className="field">
             <span>Name</span>
             <input id="photo-piece-name" value={piece.name} onChange={(e) => set({ name: e.target.value })} />
