@@ -7,6 +7,8 @@ import { measuredLength } from '../model/measurements.js'
 import { feetInchesText, inchesText } from '../three/measure.js'
 import { sharingEnabled } from '../model/shared.js'
 import { feetInches } from '../model/furniture.js'
+import { aiAvailable } from '../model/ai.js'
+import { RestyleFurniture } from './PhotoFurniture.jsx'
 import { Icon } from './Icons.jsx'
 
 export default function DetailPanel({
@@ -238,6 +240,11 @@ function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDel
         </button>
       </div>
       <p className="muted">Click a piece in the 3D view to select it, then drag it to move it (floor views). {SAVED_WHERE}</p>
+      {aiAvailable && (
+        <Section title="Restyle">
+          <RestyleFurniture key={piece.id} piece={piece} roomName={room?.name} onChange={set} />
+        </Section>
+      )}
     </div>
   )
 }

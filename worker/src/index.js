@@ -7,11 +7,50 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 //
 // POST /furniture-from-photo  { image: <base64 JPEG>, mediaType?, room? }
 // POST /furniture-from-link   { url, room? }
-//   -> { piece: { name, kind, w, d, h, estimated, brand, model, price, notes } }
+//   -> { piece: { name, kind, w, d, h, estimated, brand, model, price, notes, look } }
 
 const FIREBASE_KEYS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'))
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024
 const KINDS = ['bed', 'sofa', 'table', 'chair', 'stool', 'cabinet']
+
+// How the piece looks, for drawing it in 3D (inches; colors as #rrggbb).
+// Every field is required; "unknown", "" or 0 mean unknown or not relevant to
+// the kind (the API takes no nullable enums), and come back to the app as null.
+const nullable = (schema) =>
+  schema.enum ? { ...schema, enum: [...schema.enum, 'unknown'] }
+  : { ...schema, description: `${schema.description}; ${schema.type === 'string' ? '""' : '0'} if unknown` }
+const lookOut = (look) =>
+  Object.fromEntries(Object.entries(look ?? {}).map(([k, v]) => [k, v === 'unknown' || v === '' || v === 0 ? null : v]))
+const LOOK_SCHEMA = {
+  type: 'object',
+  description: 'How the piece looks, so a simple 3D model can resemble it',
+  properties: {
+    main_color: nullable({ type: 'string', description: 'Main color (upholstery, wood or paint) as #rrggbb' }),
+    accent_color: nullable({ type: 'string', description: 'Second color as #rrggbb: seat cushions if different, a table or dresser top, a mattress' }),
+    leg_color: nullable({ type: 'string', description: 'Leg or base color as #rrggbb' }),
+    arms: nullable({ type: 'string', enum: ['none', 'track', 'rounded', 'rolled', 'sloped'], description: 'Sofas and armchairs: track = square, straight-sided; rounded = straight-sided with a rounded top (mid-century); rolled = scrolled outward; sloped = lower toward the front' }),
+    arm_height: nullable({ type: 'number', description: 'Top of the arms above the floor, inches' }),
+    arm_width: nullable({ type: 'number', description: 'Width of one arm, inches' }),
+    back: nullable({ type: 'string', enum: ['tight', 'cushions', 'tufted'], description: 'tight = upholstered flat back; cushions = loose back cushions; tufted = buttoned or channel tufting' }),
+    seat_height: nullable({ type: 'number', description: 'Top of the seat above the floor, inches' }),
+    seat_cushions: nullable({ type: 'integer', description: 'Number of separate seat cushions (1 = one bench cushion)' }),
+    pillows: nullable({ type: 'integer', description: 'Throw pillows shown' }),
+    leg_style: nullable({ type: 'string', enum: ['none', 'block', 'tapered', 'splayed', 'turned', 'metal'], description: 'none = sits on a base or skirt; splayed = tapered legs angled outward (mid-century); metal = thin metal legs or frame' }),
+    leg_height: nullable({ type: 'number', description: 'Visible leg height, inches' }),
+    top_shape: nullable({ type: 'string', enum: ['rectangle', 'round', 'oval'], description: 'Tables' }),
+    table_base: nullable({ type: 'string', enum: ['four_legs', 'pedestal', 'trestle'], description: 'Tables' }),
+    headboard: nullable({ type: 'string', enum: ['none', 'panel', 'upholstered', 'slatted'], description: 'Beds' }),
+    headboard_height: nullable({ type: 'number', description: 'Beds: top of the headboard above the floor, inches' }),
+    drawers: nullable({ type: 'integer', description: 'Dressers, nightstands, cabinets: drawers across the front, counting all rows' }),
+    drawer_columns: nullable({ type: 'integer', description: 'Dressers: drawers side by side in a row' }),
+    doors: nullable({ type: 'integer', description: 'Cabinets, TV stands, sideboards: doors across the front' }),
+  },
+  required: [
+    'main_color', 'accent_color', 'leg_color', 'arms', 'arm_height', 'arm_width', 'back', 'seat_height', 'seat_cushions', 'pillows',
+    'leg_style', 'leg_height', 'top_shape', 'table_base', 'headboard', 'headboard_height', 'drawers', 'drawer_columns', 'doors',
+  ],
+  additionalProperties: false,
+}
 
 const PIECE_SCHEMA = {
   type: 'object',
@@ -26,14 +65,16 @@ const PIECE_SCHEMA = {
     model: { type: ['string', 'null'] },
     price: { type: ['string', 'null'], description: 'Price as printed, with currency, or null' },
     notes: { type: ['string', 'null'], description: 'Product details worth keeping, such as color, material, size option or SKU, in under 15 words; or null. Not how you found it.' },
+    look: LOOK_SCHEMA,
   },
-  required: ['name', 'kind', 'w', 'd', 'h', 'estimated', 'brand', 'model', 'price', 'notes'],
+  required: ['name', 'kind', 'w', 'd', 'h', 'estimated', 'brand', 'model', 'price', 'notes', 'look'],
   additionalProperties: false,
 }
 
 const RULES = `- Width is side to side, depth front to back, height floor to top. Convert centimeters (or feet) to inches. When dimensions aren't labeled, use the usual order for that kind of furniture.
 - kind is the closest of: bed, sofa (sofas, sectionals, armchairs), table (tables, desks), chair, stool, cabinet (dressers, nightstands, bookcases, TV stands, storage, anything else).
-- Keep name short. Use null for anything you couldn't find.`
+- Keep name short. Use null for anything you couldn't find.
+- look describes its appearance for a simple 3D model: colors as you see them (or as the color name suggests, e.g. "dark gray linen" #4a4b4f), and the parts that apply to its kind. Fill in what the photos or description show; estimate heights from the proportions; leave the rest unknown. From a link, take the look from the description, the features and the color option named.`
 
 const PHOTO_PROMPT = `This photo is either a furniture store tag or label, or a piece of furniture itself.
 Return the piece for placing in a 3D model of a house.
@@ -106,6 +147,7 @@ async function readPiece(env, content, tools, what) {
   let piece
   try {
     piece = JSON.parse(text)
+    piece.look = lookOut(piece.look)
   } catch {
     return [{ error: 'Could not read the answer. Try again.' }, 502]
   }

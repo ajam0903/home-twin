@@ -42,6 +42,13 @@ admin's Firebase sign-in token, which it checks against Google's public keys and
   web fetch tool, or searches for the product when the store blocks it (up to about 30 s). A
   card shows what it read for you to correct, then adds the piece to the selected room (or the
   floor).
+- The look: Claude also describes how the piece looks (`look` on a piece: main, accent and leg
+  colors; arm style and height; tight, tufted or loose-cushion back; seat height and cushions;
+  throw pillows; leg style and height; table top shape and base; headboard; drawers and doors),
+  and `src/three/furniture.js` draws from it. A photo of the piece gives the truest colors; a
+  link gives the store's default color option.
+- Restyle: a selected piece's panel (signed in) has "Restyle from a photo" and a link field.
+  "Apply the look" keeps its place and size; "Look and size" also takes the size read.
 - Deploy: `cd worker && npx wrangler deploy` (logged in with `npx wrangler login`).
 - New or expired key: make one in the Claude Console, then `cd worker && npx wrangler secret put
   ANTHROPIC_API_KEY` and paste it at the prompt. The app says when the key has expired.

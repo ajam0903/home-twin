@@ -14,27 +14,97 @@ const KINDS = [
 // The first web link in pasted text (a share often adds a title around it)
 const linkIn = (text) => text.match(/https?:\/\/\S+/)?.[0]?.replace(/[)\].,;]+$/, '')
 
-// Add a piece from a photo (of its store tag, or of the piece itself) or from
-// a link to its product page: Claude reads it through the AI helper, then the
-// owner checks the result and adds it.
-export default function PhotoFurniture({ placeName, roomName, onAdd }) {
-  const input = useRef(null)
-  const [state, setState] = useState({ step: 'idle' })
-  const [piece, setPiece] = useState(null)
-  const [link, setLink] = useState('')
+// The look without its empty parts (what a piece stores)
+const compactLook = (look) => {
+  const out = Object.fromEntries(Object.entries(look ?? {}).filter(([, v]) => v != null))
+  return Object.keys(out).length ? out : undefined
+}
+const infoOf = (p) => [p.brand, p.model, p.price, p.notes].filter(Boolean).join(' · ') || undefined
 
-  const read = async (source) => {
-    if (!source) return
-    setState({ step: 'reading', what: source.url ? 'link' : 'photo' })
+// Read a piece through the AI helper from a photo (of its store tag, or of the
+// piece itself) or from a link to its product page. Calls onRead(piece, what).
+function useReader(roomName) {
+  const [state, setState] = useState({ step: 'idle' })
+  const read = async (source, onRead) => {
+    const what = source.url ? 'link' : 'photo'
+    setState({ step: 'reading', what })
     try {
       const p = source.url ? await furnitureFromLink(source.url, roomName) : await furnitureFromPhoto(source.file, roomName)
-      if (source.url) setLink('')
-      setPiece({ ...p, w: Math.round(p.w), d: Math.round(p.d), h: Math.round(p.h) })
-      setState({ step: 'review', what: source.url ? 'link' : 'photo' })
+      onRead({ ...p, w: Math.round(p.w), d: Math.round(p.d), h: Math.round(p.h) }, what)
+      setState({ step: 'done', what })
     } catch (err) {
       setState({ step: 'error', message: err.message })
     }
   }
+  return [state, setState, read]
+}
+
+function SourcePicker({ id, state, setState, onSource, photoLabel }) {
+  const input = useRef(null)
+  const [link, setLink] = useState('')
+  const reading = state.step === 'reading'
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) onSource({ file })
+          e.target.value = ''
+        }}
+      />
+      <button type="button" className="add-furniture photo" onClick={() => input.current?.click()} disabled={reading}>
+        <Icon.camera width={16} height={16} />
+        <span>{reading && state.what === 'photo' ? 'Reading the photo...' : photoLabel}</span>
+      </button>
+      <form
+        className="link-furniture"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const url = linkIn(link)
+          if (url) {
+            setLink('')
+            onSource({ url })
+          } else setState({ step: 'error', message: 'Paste a product page link (https://...).' })
+        }}
+      >
+        <input
+          id={id}
+          type="url"
+          inputMode="url"
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          onPaste={(e) => {
+            // a shared link often arrives with a title around it
+            const url = linkIn(e.clipboardData.getData('text'))
+            if (url) {
+              e.preventDefault()
+              setLink(url)
+            }
+          }}
+          placeholder="Or paste a product link"
+          aria-label="Product link"
+          disabled={reading}
+        />
+        <button type="submit" className="btn" disabled={!link.trim() || reading}>
+          {reading && state.what === 'link' ? 'Reading...' : 'Read'}
+        </button>
+      </form>
+      {reading && state.what === 'link' && <p className="muted">Opening the product page. A link can take up to half a minute.</p>}
+      {state.step === 'error' && <p className="photo-error">{state.message}</p>}
+    </>
+  )
+}
+
+// Add a piece from a photo or link: Claude reads it, then the owner checks the
+// result and adds it.
+export default function PhotoFurniture({ placeName, roomName, onAdd }) {
+  const [state, setState, read] = useReader(roomName)
+  const [piece, setPiece] = useState(null)
+
   const set = (patch) => setPiece((p) => ({ ...p, ...patch }))
   const size = (key) => (
     <label className="field">
@@ -46,62 +116,14 @@ export default function PhotoFurniture({ placeName, roomName, onAdd }) {
     </label>
   )
   const valid = piece && piece.name.trim() && [piece.w, piece.d, piece.h].every((v) => Number(v) > 0 && Number(v) < 600)
+  const reviewing = state.step === 'done' && piece
 
   return (
     <div className="photo-furniture">
-      <input
-        ref={input}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) read({ file })
-          e.target.value = ''
-        }}
-      />
-      {state.step !== 'review' && (
-        <>
-          <button type="button" className="add-furniture photo" onClick={() => input.current?.click()} disabled={state.step === 'reading'}>
-            <Icon.camera width={16} height={16} />
-            <span>{state.step === 'reading' && state.what === 'photo' ? 'Reading the photo...' : 'Add from a photo (tag or item)'}</span>
-          </button>
-          <form
-            className="link-furniture"
-            onSubmit={(e) => {
-              e.preventDefault()
-              const url = linkIn(link)
-              if (url) read({ url })
-              else setState({ step: 'error', message: 'Paste a product page link (https://...).' })
-            }}
-          >
-            <input
-              id="furniture-link"
-              type="url"
-              inputMode="url"
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              onPaste={(e) => {
-                // a shared link often arrives with a title around it
-                const url = linkIn(e.clipboardData.getData('text'))
-                if (url) {
-                  e.preventDefault()
-                  setLink(url)
-                }
-              }}
-              placeholder="Or paste a product link"
-              aria-label="Product link"
-              disabled={state.step === 'reading'}
-            />
-            <button type="submit" className="btn" disabled={!link.trim() || state.step === 'reading'}>
-              {state.step === 'reading' && state.what === 'link' ? 'Reading...' : 'Read'}
-            </button>
-          </form>
-          {state.step === 'reading' && state.what === 'link' && <p className="muted">Opening the product page. A link can take up to half a minute.</p>}
-        </>
+      {!reviewing && (
+        <SourcePicker id="furniture-link" state={state} setState={setState} photoLabel="Add from a photo (tag or item)" onSource={(s) => read(s, setPiece)} />
       )}
-      {state.step === 'error' && <p className="photo-error">{state.message}</p>}
-      {state.step === 'review' && piece && (
+      {reviewing && (
         <div className="photo-review">
           <p className="kicker">
             {state.what === 'link' ? 'From the link' : 'From the photo'}
@@ -126,23 +148,75 @@ export default function PhotoFurniture({ placeName, roomName, onAdd }) {
             {size('d')}
             {size('h')}
           </div>
-          {(piece.brand || piece.model || piece.price || piece.notes) && (
-            <p className="muted">{[piece.brand, piece.model, piece.price, piece.notes].filter(Boolean).join(' · ')}</p>
-          )}
+          {infoOf(piece) && <p className="muted">{infoOf(piece)}</p>}
           <div className="button-row">
             <button
               type="button"
               className="btn"
               disabled={!valid}
               onClick={() => {
-                const info = [piece.brand, piece.model, piece.price, piece.notes].filter(Boolean).join(' · ')
-                onAdd({ kind: piece.kind, name: piece.name.trim(), w: Number(piece.w), d: Number(piece.d), h: Number(piece.h), info: info || undefined })
+                onAdd({
+                  kind: piece.kind, name: piece.name.trim(), w: Number(piece.w), d: Number(piece.d), h: Number(piece.h),
+                  info: infoOf(piece), look: compactLook(piece.look),
+                })
                 setPiece(null)
                 setState({ step: 'idle' })
               }}
             >
               Add to {placeName}
             </button>
+            <button type="button" className="btn" onClick={() => setState({ step: 'idle' })}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Make a placed piece look like the real one, from a photo of it or its
+// product link. Its place stays; the size changes only when asked.
+export function RestyleFurniture({ piece, roomName, onChange }) {
+  const [state, setState, read] = useReader(roomName)
+  const [found, setFound] = useState(null)
+  const reviewing = state.step === 'done' && found
+  const apply = (withSize) => {
+    onChange({
+      kind: found.kind, look: compactLook(found.look) ?? null, info: infoOf(found) ?? null,
+      ...(withSize ? { w: found.w, d: found.d, h: found.h } : {}),
+    })
+    setFound(null)
+    setState({ step: 'idle' })
+  }
+  const sameSize = found && found.w === piece.w && found.d === piece.d && found.h === piece.h
+
+  return (
+    <div className="photo-furniture restyle">
+      <p className="muted">Doesn't look right? Show Claude the real piece and its 3D shape will follow: colors, arms, back, cushions, legs.</p>
+      {!reviewing && (
+        <SourcePicker id="restyle-link" state={state} setState={setState} photoLabel="Restyle from a photo" onSource={(s) => read(s, setFound)} />
+      )}
+      {reviewing && (
+        <div className="photo-review">
+          <p className="kicker">{state.what === 'link' ? 'From the link' : 'From the photo'}</p>
+          <p>
+            <strong>{found.name}</strong>
+            <br />
+            <span className="muted">
+              {found.w} x {found.d} x {found.h} in{found.estimated ? ' (estimated)' : ''}
+              {infoOf(found) ? ` · ${infoOf(found)}` : ''}
+            </span>
+          </p>
+          <div className="button-row">
+            <button type="button" className="btn" onClick={() => apply(false)}>
+              Apply the look
+            </button>
+            {!sameSize && !found.estimated && (
+              <button type="button" className="btn" onClick={() => apply(true)}>
+                Look and size
+              </button>
+            )}
             <button type="button" className="btn" onClick={() => setState({ step: 'idle' })}>
               Cancel
             </button>
