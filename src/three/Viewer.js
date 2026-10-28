@@ -701,12 +701,16 @@ export class Viewer {
     const s = this.selection
     let center
     let radius
+    let minY = 0.6
     if (s.kind === 'room') {
+      // Close on the room: its floor plan fills the view with a little margin,
+      // seen from higher up so its own walls do not hide it
       const room = roomById[s.id]
       const xs = room.poly.map((p) => p[0])
       const ys = room.poly.map((p) => p[1])
-      center = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, roomFloor(room), (Math.min(...ys) + Math.max(...ys)) / 2)
-      radius = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.8 + 9
+      center = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, roomFloor(room) + 1, (Math.min(...ys) + Math.max(...ys)) / 2)
+      radius = Math.max(8, Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 3)
+      minY = 0.72
     } else {
       const item = itemById[s.id]
       if (item.focus) {
@@ -719,7 +723,7 @@ export class Viewer {
         radius = 15
       }
     }
-    const pos = center.clone().addScaledVector(this.viewDir(0.6), this.viewDistance(radius))
+    const pos = center.clone().addScaledVector(this.viewDir(minY), this.viewDistance(radius))
     this.flyTo(pos, center, true)
   }
 

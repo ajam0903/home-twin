@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ROOMS, ITEMS, levelById, roomArea, plantedInfo, pointInPoly } from '../model/house.js'
 import { FURNITURE_PRESETS, feetInches } from '../model/furniture.js'
 import { roomNoteKey, notesText } from '../model/notes.js'
@@ -42,6 +42,13 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
       ? ROOMS.find((r) => r.id === selection.id)
       : selectedPiece && ROOMS.find((r) => r.level === selectedPiece.level && pointInPoly([selectedPiece.x, selectedPiece.y], r.poly))
   const addRoom = selectedRoom?.level === level ? selectedRoom : null
+
+  // With a room selected the furniture list shows that room's pieces (a
+  // search, or "All on this floor", shows them all)
+  const [allPieces, setAllPieces] = useState(false)
+  useEffect(() => setAllPieces(false), [addRoom?.id])
+  const inRoom = (f) => pointInPoly([f.x, f.y], addRoom.poly)
+  const byRoom = (g) => !!addRoom && g.id === addRoom.level && !query && !allPieces
 
   return (
     <div className="room-list">
@@ -97,9 +104,17 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
           </ul>
           {g.id !== 'site' && (g.furniture.length > 0 || level === g.id) && (
             <>
-              <h4 className="subhead">Furniture</h4>
+              <div className="subhead-row">
+                <h4 className="subhead">{byRoom(g) ? `Furniture in the ${addRoom.name}` : 'Furniture'}</h4>
+                {addRoom && g.id === addRoom.level && !query && (
+                  <button type="button" className="link" onClick={() => setAllPieces((a) => !a)}>
+                    {allPieces ? `Only the ${addRoom.name}` : `All on this floor (${g.furniture.length})`}
+                  </button>
+                )}
+              </div>
+              {byRoom(g) && !g.furniture.some(inRoom) && <p className="muted list-empty">Nothing in the {addRoom.name} yet.</p>}
               <ul>
-                {g.furniture.map((f) => (
+                {(byRoom(g) ? g.furniture.filter(inRoom) : g.furniture).map((f) => (
                   <li key={f.id} className={onRemoveFurniture ? 'removable' + (removing === f.id ? ' confirming' : '') : undefined}>
                     <button type="button" className={'row' + (isSel('furniture', f.id) ? ' on' : '')} onClick={() => onSelect({ kind: 'furniture', id: f.id })}>
                       <span className="swatch furniture" />

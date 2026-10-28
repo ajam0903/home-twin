@@ -104,7 +104,8 @@ function Thinking({ what }) {
 // One field for everything: type a description, paste a link (or an image),
 // or attach a photo with the camera button. Enter sends. What was sent stays
 // in the field while Claude reads, and after an error to try again.
-function PromptBox({ id, state, onSend, placeholder = 'Describe, paste a link or attach a photo' }) {
+// action: the send button's words, [idle, while Claude works]
+function PromptBox({ id, state, onSend, action, placeholder = 'Describe, paste a link or attach a photo' }) {
   const input = useRef(null)
   const [text, setText] = useState('')
   const [file, setFile] = useState(null)
@@ -168,7 +169,7 @@ function PromptBox({ id, state, onSend, placeholder = 'Describe, paste a link or
             <Icon.camera width={18} height={18} />
           </button>
           <button type="submit" className="btn prompt-send" disabled={reading || (!text.trim() && !file)}>
-            {reading ? 'Reading...' : 'Read'}
+            {reading ? action[1] : action[0]}
           </button>
         </div>
         <input
@@ -241,7 +242,7 @@ export default function AddFurniture({ placeName, room, furniture, presets, ai, 
                   ? `Claude knows the ${context.name}: ${context.size}, ${context.pieces.length ? `${context.pieces.length} piece${context.pieces.length > 1 ? 's' : ''} in it` : 'empty so far'}.`
                   : 'Select a room first and Claude will size the piece to fit it.'}
               </p>
-              <PromptBox id="furniture-prompt" state={state} onSend={(s) => read(s, setPiece)} />
+              <PromptBox id="furniture-prompt" state={state} action={['Create', 'Creating...']} onSend={(s) => read(s, setPiece)} />
             </>
           )}
           <select
@@ -334,7 +335,7 @@ export function RestyleFurniture({ piece, room, furniture, onChange }) {
   return (
     <div className="photo-furniture restyle">
       <p className="muted">Doesn't look right? Show Claude the real piece and its 3D shape will follow: colors, arms, back, cushions, legs.</p>
-      {!reviewing && <PromptBox id="restyle-prompt" state={state} onSend={(s) => read(s, setFound)} />}
+      {!reviewing && <PromptBox id="restyle-prompt" state={state} action={['Restyle', 'Restyling...']} onSend={(s) => read(s, setFound)} />}
       {reviewing && (
         <div className="photo-review">
           <p className="kicker">{{ link: 'From the link', photo: 'From the photo', description: 'From your description' }[state.what]}</p>
