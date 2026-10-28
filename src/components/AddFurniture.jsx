@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { furnitureFromPhoto, furnitureFromLink, furnitureFromText } from '../model/ai.js'
 import { Icon } from './Icons.jsx'
+import { pointInPoly } from '../model/house.js'
+import { feetInches } from '../model/furniture.js'
 
 const KINDS = [
   ['sofa', 'Sofa or chair'],
@@ -21,16 +23,36 @@ const compactLook = (look) => {
 }
 const infoOf = (p) => [p.brand, p.model, p.price, p.notes].filter(Boolean).join(' · ') || undefined
 
-const WAIT = {
-  photo: 'Reading the photo...',
-  link: 'Opening the product page. A link can take up to half a minute.',
-  description: 'Reading your description...',
+// What Claude is doing while it reads, step by step (a link takes longest)
+const STEPS = {
+  photo: ['Looking at the photo', 'Reading the shape and any tag', 'Working out the size', 'Picking the colors and legs'],
+  link: ['Opening the product page', 'Reading the details', 'Finding the dimensions', 'Working out the look'],
+  description: ['Reading your description', 'Thinking it through', 'Working out the size', 'Shaping the 3D piece'],
+}
+const STEP_SECONDS = 4
+
+const bbox = (poly) => {
+  const xs = poly.map((p) => p[0])
+  const ys = poly.map((p) => p[1])
+  return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]
+}
+
+// The room a new or restyled piece goes in, for Claude: its size and what is
+// already there, so "this room", a size that fits or "to match the couch"
+// make sense
+export function roomContext(room, furniture = [], except) {
+  if (!room) return null
+  const [w, d] = bbox(room.poly)
+  const pieces = furniture
+    .filter((f) => f.id !== except && f.level === room.level && pointInPoly([f.x, f.y], room.poly))
+    .map((f) => `${f.name} (${f.kind}, ${f.w} x ${f.d} x ${f.h} in${f.look?.main_color ? `, ${f.look.main_color}` : ''})`)
+  return { name: room.name, size: room.dims ?? `about ${feetInches(w * 12)} x ${feetInches(d * 12)}`, ceiling: room.ceiling, pieces }
 }
 
 // Read a piece through the AI helper from what the owner gave: a photo (of the
 // piece or its store tag) with any words about it, a product link (the rest of
 // the text goes along), or a description alone. Calls onRead(piece, what).
-function useReader(roomName) {
+function useReader(room) {
   const [state, setState] = useState({ step: 'idle' })
   const read = async ({ text, file }, onRead) => {
     const url = file ? null : linkIn(text)
@@ -39,9 +61,9 @@ function useReader(roomName) {
     setState({ step: 'reading', what })
     try {
       const p = file
-        ? await furnitureFromPhoto(file, roomName, note)
-        : url ? await furnitureFromLink(url, roomName, note)
-        : await furnitureFromText(note, roomName)
+        ? await furnitureFromPhoto(file, room, note)
+        : url ? await furnitureFromLink(url, room, note)
+        : await furnitureFromText(note, room)
       onRead({ ...p, w: Math.round(p.w), d: Math.round(p.d), h: Math.round(p.h) }, what)
       setState({ step: 'done', what })
     } catch (err) {
@@ -51,8 +73,37 @@ function useReader(roomName) {
   return [state, setState, read]
 }
 
+// While Claude reads: a moving bar, the step it is on and the seconds so far
+function Thinking({ what }) {
+  const [secs, setSecs] = useState(0)
+  useEffect(() => {
+    const start = Date.now()
+    const t = setInterval(() => setSecs(Math.floor((Date.now() - start) / 1000)), 500)
+    return () => clearInterval(t)
+  }, [])
+  const steps = STEPS[what]
+  const step = steps[Math.min(steps.length - 1, Math.floor(secs / STEP_SECONDS))]
+  return (
+    <div className="thinking" role="status">
+      <span className="thinking-icon">
+        <Icon.sofa width={16} height={16} />
+      </span>
+      <span className="thinking-step" key={step}>
+        {step}
+        <span className="thinking-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      </span>
+      <span className="thinking-secs">{secs} s</span>
+    </div>
+  )
+}
+
 // One field for everything: type a description, paste a link (or an image),
-// or attach a photo with the camera button. Enter sends.
+// or attach a photo with the camera button. Enter sends. What was sent stays
+// in the field while Claude reads, and after an error to try again.
 function PromptBox({ id, state, onSend, placeholder = 'Describe, paste a link or attach a photo' }) {
   const input = useRef(null)
   const [text, setText] = useState('')
@@ -70,8 +121,6 @@ function PromptBox({ id, state, onSend, placeholder = 'Describe, paste a link or
   const send = () => {
     if (reading || (!text.trim() && !file)) return
     onSend({ text, file })
-    setText('')
-    setFile(null)
   }
 
   return (
@@ -134,7 +183,7 @@ function PromptBox({ id, state, onSend, placeholder = 'Describe, paste a link or
           }}
         />
       </form>
-      {reading && <p className="muted">{WAIT[state.what]}</p>}
+      {reading && <Thinking what={state.what} />}
       {state.step === 'error' && <p className="photo-error">{state.message}</p>}
     </div>
   )
@@ -143,9 +192,10 @@ function PromptBox({ id, state, onSend, placeholder = 'Describe, paste a link or
 // The one Add furniture button: opens a card to add a piece from a
 // description, a product link or a photo (of the item or its tag), which
 // Claude reads and the owner checks, or a standard piece from the list.
-export default function AddFurniture({ placeName, roomName, presets, ai, onAdd }) {
+export default function AddFurniture({ placeName, room, furniture, presets, ai, onAdd }) {
   const [open, setOpen] = useState(false)
-  const [state, setState, read] = useReader(roomName)
+  const context = roomContext(room, furniture)
+  const [state, setState, read] = useReader(context)
   const [piece, setPiece] = useState(null)
   const close = () => {
     setOpen(false)
@@ -184,7 +234,16 @@ export default function AddFurniture({ placeName, roomName, presets, ai, onAdd }
       </div>
       {!reviewing && (
         <>
-          {ai && <PromptBox id="furniture-prompt" state={state} onSend={(s) => read(s, setPiece)} />}
+          {ai && (
+            <>
+              <p className="add-card-context">
+                {context
+                  ? `Claude knows the ${context.name}: ${context.size}, ${context.pieces.length ? `${context.pieces.length} piece${context.pieces.length > 1 ? 's' : ''} in it` : 'empty so far'}.`
+                  : 'Select a room first and Claude will size the piece to fit it.'}
+              </p>
+              <PromptBox id="furniture-prompt" state={state} onSend={(s) => read(s, setPiece)} />
+            </>
+          )}
           <select
             className="preset-select"
             value=""
@@ -258,8 +317,8 @@ export default function AddFurniture({ placeName, roomName, presets, ai, onAdd }
 
 // Make a placed piece look like the real one, from a photo of it, its product
 // link or a description. Its place stays; the size changes only when asked.
-export function RestyleFurniture({ piece, roomName, onChange }) {
-  const [state, setState, read] = useReader(roomName)
+export function RestyleFurniture({ piece, room, furniture, onChange }) {
+  const [state, setState, read] = useReader(roomContext(room, furniture, piece.id))
   const [found, setFound] = useState(null)
   const reviewing = state.step === 'done' && found
   const apply = (withSize) => {

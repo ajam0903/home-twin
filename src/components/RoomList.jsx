@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ROOMS, ITEMS, levelById, roomArea, plantedInfo } from '../model/house.js'
+import { ROOMS, ITEMS, levelById, roomArea, plantedInfo, pointInPoly } from '../model/house.js'
 import { FURNITURE_PRESETS, feetInches } from '../model/furniture.js'
 import { roomNoteKey, notesText } from '../model/notes.js'
 import { Icon } from './Icons.jsx'
@@ -10,8 +10,9 @@ import { aiAvailable } from '../model/ai.js'
 const ORDER = ['L1', 'L2', 'B', 'site']
 const groupName = (id) => (id === 'site' ? 'Property' : levelById[id].name)
 
-export default function RoomList({ selection, onSelect, level, furniture = [], onAddFurniture, notes = {} }) {
+export default function RoomList({ selection, onSelect, level, furniture = [], onAddFurniture, onRemoveFurniture, notes = {} }) {
   const [q, setQ] = useState('')
+  const [removing, setRemoving] = useState(null) // the piece asking "Remove?"
   const query = q.trim().toLowerCase()
 
   const groups = useMemo(() => {
@@ -33,8 +34,14 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
   }, [query, level, furniture, notes])
 
   const isSel = (kind, id) => selection?.kind === kind && selection.id === id
-  // new furniture lands in the selected room (see addFurniture in App)
-  const selectedRoom = selection?.kind === 'room' ? ROOMS.find((r) => r.id === selection.id) : null
+  // New furniture lands in the selected room, or the room of the selected
+  // piece (so pieces can be added one after another), and Claude is told about it
+  const selectedPiece = selection?.kind === 'furniture' ? furniture.find((f) => f.id === selection.id) : null
+  const selectedRoom =
+    selection?.kind === 'room'
+      ? ROOMS.find((r) => r.id === selection.id)
+      : selectedPiece && ROOMS.find((r) => r.level === selectedPiece.level && pointInPoly([selectedPiece.x, selectedPiece.y], r.poly))
+  const addRoom = selectedRoom?.level === level ? selectedRoom : null
 
   return (
     <div className="room-list">
@@ -51,9 +58,10 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
         <AddFurniture
           ai={aiAvailable}
           presets={FURNITURE_PRESETS}
-          roomName={selectedRoom?.level === level ? selectedRoom.name : null}
-          placeName={selectedRoom?.level === level ? selectedRoom.name : groupName(level)}
-          onAdd={(preset) => onAddFurniture(preset, level)}
+          room={addRoom}
+          furniture={furniture}
+          placeName={addRoom ? addRoom.name : groupName(level)}
+          onAdd={(preset) => onAddFurniture(preset, level, addRoom)}
         />
       )}
       {groups.map((g) => (
@@ -92,7 +100,7 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
               <h4 className="subhead">Furniture</h4>
               <ul>
                 {g.furniture.map((f) => (
-                  <li key={f.id}>
+                  <li key={f.id} className={onRemoveFurniture ? 'removable' + (removing === f.id ? ' confirming' : '') : undefined}>
                     <button type="button" className={'row' + (isSel('furniture', f.id) ? ' on' : '')} onClick={() => onSelect({ kind: 'furniture', id: f.id })}>
                       <span className="swatch furniture" />
                       <span className="row-main">
@@ -102,6 +110,28 @@ export default function RoomList({ selection, onSelect, level, furniture = [], o
                         {feetInches(f.w)} x {feetInches(f.d)}
                       </span>
                     </button>
+                    {onRemoveFurniture &&
+                      (removing === f.id ? (
+                        <span className="remove-confirm">
+                          <button
+                            type="button"
+                            className="btn danger"
+                            onClick={() => {
+                              onRemoveFurniture(f.id)
+                              setRemoving(null)
+                            }}
+                          >
+                            Remove
+                          </button>
+                          <button type="button" className="icon-btn ghost" onClick={() => setRemoving(null)} aria-label="Keep it">
+                            <Icon.close width={16} height={16} />
+                          </button>
+                        </span>
+                      ) : (
+                        <button type="button" className="icon-btn ghost row-remove" onClick={() => setRemoving(f.id)} aria-label={`Remove ${f.name}`} title="Remove">
+                          <Icon.trash width={16} height={16} />
+                        </button>
+                      ))}
                   </li>
                 ))}
               </ul>

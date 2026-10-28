@@ -37,7 +37,7 @@ export default function DetailPanel({
   }
   const piece = selection?.kind === 'furniture' && furniture.find((f) => f.id === selection.id)
   if (piece) {
-    return <FurnitureDetail piece={piece} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} onChange={onFurnitureChange} onDelete={onFurnitureDelete} />
+    return <FurnitureDetail piece={piece} furniture={furniture} onSelect={onSelect} onClose={onClose} hideHeader={hideHeader} onChange={onFurnitureChange} onDelete={onFurnitureDelete} />
   }
   const saved = measurements.length > 0 && (
     <div className="detail">
@@ -175,7 +175,7 @@ function FloorOverview({ level, furniture, onSelect }) {
 }
 
 // Edit one piece: name, size in inches, rotation; drag it in the 3D view to move it
-function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDelete }) {
+function FurnitureDetail({ piece, furniture, onSelect, onClose, hideHeader, onChange, onDelete }) {
   const room = roomAt(piece.level, piece.x, piece.y)
   const set = (patch) => onChange?.(piece.id, patch)
   if (!onChange) {
@@ -242,7 +242,7 @@ function FurnitureDetail({ piece, onSelect, onClose, hideHeader, onChange, onDel
       <p className="muted">Click a piece in the 3D view to select it, then drag it to move it (floor views). {SAVED_WHERE}</p>
       {aiAvailable && (
         <Section title="Restyle">
-          <RestyleFurniture key={piece.id} piece={piece} roomName={room?.name} onChange={set} />
+          <RestyleFurniture key={piece.id} piece={piece} room={room} furniture={furniture} onChange={set} />
         </Section>
       )}
     </div>

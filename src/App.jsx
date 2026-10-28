@@ -142,8 +142,8 @@ export default function App() {
     select(sel)
   }
 
-  const addFurniture = (preset, lvl) => {
-    const room = selection?.kind === 'room' && roomById[selection.id]?.level === lvl ? roomById[selection.id] : null
+  // room: where the list says it goes (the selected room, or the selected piece's)
+  const addFurniture = (preset, lvl, room) => {
     const [x, y] = room ? roomLabelPoint(room) : LEVEL_CENTER[lvl]
     const piece = settleFurniture({ id: `f${Date.now()}`, kind: preset.kind, name: preset.name, level: lvl, x, y, w: preset.w, d: preset.d, h: preset.h, rot: 0 })
     if (preset.info) piece.info = preset.info // from a photo or link: brand, model, price
@@ -154,7 +154,7 @@ export default function App() {
   }
   const removeFurniture = (id) => {
     setFurniture((list) => list.filter((f) => f.id !== id))
-    setSelection(null)
+    setSelection((s) => (s?.kind === 'furniture' && s.id === id ? null : s))
   }
 
   // The admin, signed in on a browser whose notes, measurements or furniture
@@ -381,7 +381,7 @@ export default function App() {
           <>
             <aside className="sidebar">
               <LevelPicker value={level} onChange={changeLevel} vertical />
-              <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} notes={notes} />
+              <RoomList selection={selection} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} onRemoveFurniture={editable ? removeFurniture : null} notes={notes} />
             </aside>
             <main className={'stage' + (overlay && showDetails ? ' beside-details' : '')}>
               {viewerEl}
@@ -503,7 +503,7 @@ export default function App() {
                   )}
                 </div>
                 {sheetTab === 'rooms' ? (
-                  <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} notes={notes} />
+                  <RoomList selection={sel} onSelect={select} level={level} furniture={furniture} onAddFurniture={editable ? addFurniture : null} onRemoveFurniture={editable ? removeFurniture : null} notes={notes} />
                 ) : (
                   <DetailPanel selection={null} onSelect={select} level={level} furniture={furniture} {...measureProps} />
                 )}

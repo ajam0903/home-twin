@@ -46,6 +46,9 @@ export const Icon = {
   camera: (p) => (
     <svg {...base} {...p}><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
   ),
+  trash: (p) => (
+    <svg {...base} {...p}><path d="M4.5 7h15M10 7V4.5h4V7" /><path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v5.5M14 11v5.5" /></svg>
+  ),
   fit: (p) => (
     <svg {...base} {...p}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
   ),

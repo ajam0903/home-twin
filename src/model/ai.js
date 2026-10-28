@@ -45,6 +45,7 @@ async function call(path, body) {
 
 // A furniture piece from a product page link (Claude opens the page, or
 // searches for the product when the store blocks it); same shape as below.
+// room: the room it goes in, { name, size, ceiling, pieces } (roomContext).
 // note: the owner's own words sent along, which win where they differ.
 export async function furnitureFromLink(url, room, note) {
   const { piece } = await call('/furniture-from-link', { url, room, note })

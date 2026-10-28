@@ -8,7 +8,8 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 // POST /furniture-from-photo  { image: <base64 JPEG>, mediaType?, room?, note? }
 // POST /furniture-from-link   { url, room?, note? }
 // POST /furniture-from-text   { text, room? }
-//   (note: the owner's own words about the piece, sent with a photo or link)
+//   (note: the owner's own words about the piece, sent with a photo or link;
+//    room: { name, size, ceiling, pieces } of the room it goes in, see forRoom)
 //   -> { piece: { name, kind, w, d, h, estimated, brand, model, price, notes, look } }
 
 const FIREBASE_KEYS = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'))
@@ -166,7 +167,26 @@ async function readPiece(env, content, tools, what) {
   return [{ piece, usage: response.usage }, 200]
 }
 
-const forRoom = (prompt, room) => (room ? `${prompt}\nIt is going in the ${room}.` : prompt)
+// The room it goes in: { name, size?, ceiling?, pieces?: [what is already
+// there] } (or just its name), so "this room", a size that fits or "to match
+// the couch" can be worked out
+const clip = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
+const forRoom = (prompt, room) => {
+  if (typeof room === 'string') room = { name: room }
+  const name = clip(room?.name, 60)
+  if (!name) return prompt
+  const size = clip(room.size, 60)
+  const ceiling = clip(room.ceiling, 30)
+  const pieces = (Array.isArray(room.pieces) ? room.pieces.slice(0, 30) : []).map((p) => clip(p, 160)).filter(Boolean)
+  return [
+    prompt,
+    '',
+    'The room it is going in:',
+    `- ${name}${size ? `, ${size}` : ''}${ceiling ? `, ${ceiling} ceiling` : ''}`,
+    pieces.length ? `- Already in it: ${pieces.join('; ')}` : '- Nothing else in it yet',
+    'Use the room where the owner leaves something open: "this room", a size that fits it, a piece that matches or goes with what is there. What the photo, the page or the owner says comes first.',
+  ].join('\n')
+}
 // The owner's words with a photo or link take priority over what Claude reads
 const withNote = (prompt, note) =>
   typeof note === 'string' && note.trim() ? `${prompt}\nThe owner adds (follow it where it differs): ${note.trim().slice(0, MAX_NOTE)}` : prompt

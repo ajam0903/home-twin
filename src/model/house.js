@@ -898,7 +898,8 @@ export const WALLS = [
   { level: 'L1', a: [BAY[3][0], 0], b: [W, 0], t: EXT, ext: true, openings: [win('C235', 30.75, { head: 7.1 })] },
   {
     level: 'L1', a: [0, 0], b: [0, D], t: EXT, ext: true,
-    openings: [win('3046', 2.92), win('3046', 13.08), win('3046', 23.5)],
+    // none on the living room side (owner)
+    openings: [win('3046', 2.92), win('3046', 13.08)],
   },
   {
     level: 'L1', a: [0, D], b: [W, D], t: EXT, ext: true,
